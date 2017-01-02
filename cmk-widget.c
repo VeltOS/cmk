@@ -10,11 +10,14 @@ typedef struct _CMKWidgetPrivate CMKWidgetPrivate;
 struct _CMKWidgetPrivate
 {
 	CMKStyle *style;
+	const gchar *backgroundColorName;
 };
 
 enum
 {
-	PROP_STYLE = 1
+	PROP_STYLE = 1,
+	PROP_BACKGROUND_COLOR_NAME,
+	PROP_LAST
 };
 
 enum
@@ -23,15 +26,22 @@ enum
 	SIGNAL_LAST
 };
 
+static GParamSpec *properties[PROP_LAST];
 static guint signals[SIGNAL_LAST];
 
 static void cmk_widget_dispose(GObject *self_);
 static void cmk_widget_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void on_style_changed(CMKWidget *self, CMKStyle *style);
+static void update_named_background_color(CMKWidget *self);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CMKWidget, cmk_widget, CLUTTER_TYPE_ACTOR);
 #define PRIVATE(widget) ((CMKWidgetPrivate *)cmk_widget_get_instance_private(widget))
+
+CMKWidget * cmk_widget_new()
+{
+	return CMK_WIDGET(g_object_new(CMK_TYPE_WIDGET, NULL));
+}
 
 static void cmk_widget_class_init(CMKWidgetClass *class)
 {
@@ -40,7 +50,10 @@ static void cmk_widget_class_init(CMKWidgetClass *class)
 	base->set_property = cmk_widget_set_property;
 	base->dispose = cmk_widget_dispose;
 	
-	g_object_class_install_property(base, PROP_STYLE, g_param_spec_object("style", "style", "style", CMK_TYPE_STYLE, G_PARAM_READWRITE));
+	properties[PROP_STYLE] = g_param_spec_object("style", "style", "style", CMK_TYPE_STYLE, G_PARAM_READWRITE);
+	properties[PROP_BACKGROUND_COLOR_NAME] = g_param_spec_string("background-color-name", "background-color-name", "Named background color using CMKStyle", NULL, G_PARAM_READWRITE);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
 	
 	signals[SIGNAL_STYLE_CHANGED] = g_signal_new("style-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET(CMKWidgetClass, style_changed), NULL, NULL, NULL, G_TYPE_NONE, 1, CMK_TYPE_STYLE);
 }
@@ -94,6 +107,7 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 static void on_style_changed(CMKWidget *self, CMKStyle *style)
 {
 	g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0, style);
+	update_named_background_color(self);
 }
 
 void cmk_widget_set_style(CMKWidget *self, CMKStyle *style)
@@ -112,3 +126,26 @@ CMKStyle * cmk_widget_get_style(CMKWidget *self)
 	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
 	return PRIVATE(self)->style;
 }
+
+void cmk_widget_set_background_color(CMKWidget *self, const gchar *namedColor)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	g_clear_pointer(&(PRIVATE(self)->backgroundColorName), g_free);
+	PRIVATE(self)->backgroundColorName = g_strdup(namedColor);
+	update_named_background_color(self);
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_BACKGROUND_COLOR_NAME]);
+}
+
+const gchar * cmk_widget_get_background_color(CMKWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
+	return PRIVATE(self)->backgroundColorName;
+}
+
+static void update_named_background_color(CMKWidget *self)
+{
+	const CMKColor *color = cmk_style_get_color(PRIVATE(self)->style, PRIVATE(self)->backgroundColorName);
+	ClutterColor cc = cmk_to_clutter_color(color);
+	clutter_actor_set_background_color(CLUTTER_ACTOR(self), &cc);
+}
+

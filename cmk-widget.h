@@ -24,8 +24,13 @@ struct _CMKWidgetClass
 	void (*style_changed) (CMKWidget *self, CMKStyle *style);
 };
 
+CMKWidget * cmk_widget_new();
+
 CMKStyle * cmk_widget_get_style(CMKWidget *widget);
 void cmk_widget_set_style(CMKWidget *widget, CMKStyle *style);
+
+void cmk_widget_set_background_color(CMKWidget *widget, const gchar *namedColor);
+const gchar * cmk_widget_get_background_color(CMKWidget *widget);
 
 G_END_DECLS
 
