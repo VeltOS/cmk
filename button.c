@@ -11,7 +11,6 @@ struct _CMKButton
 {
 	ClutterActor parent;
 	ClutterText *text; // Owned by Clutter. Do not free.
-	CMKStyle *style;
 	gchar *backgroundColorName;
 };
 
@@ -89,12 +88,10 @@ static void cmk_button_init(CMKButton *self)
 	clutter_actor_add_child(actor, CLUTTER_ACTOR(self->text));
 
 	self->backgroundColorName = g_strdup("background");
-	on_style_changed(CMK_WIDGET(self), cmk_widget_get_style(CMK_WIDGET(self)));
 }
 
 static void cmk_button_dispose(GObject *self_)
 {
-	g_clear_object(&(CMK_BUTTON(self_)->style));
 	g_clear_pointer(&(CMK_BUTTON(self_)->backgroundColorName), g_free);
 	G_OBJECT_CLASS(cmk_button_parent_class)->dispose(self_);
 }
@@ -154,6 +151,8 @@ static void on_style_changed(CMKWidget *self_, CMKStyle *style)
 	cmk_style_get_font_color_for_background(style, "background", &color);
 	ClutterColor cc = cmk_to_clutter_color(&color);
 	clutter_text_set_color(CMK_BUTTON(self_)->text, &cc);
+
+	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_, style);
 }
 
 static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas)

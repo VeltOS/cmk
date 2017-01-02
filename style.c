@@ -38,7 +38,7 @@ CMKStyle * cmk_style_new()
 CMKStyle * cmk_style_get_default()
 {
 	static CMKStyle *globalStyle = NULL;
-	if(globalStyle)
+	if(CMK_IS_STYLE(globalStyle))
 		return g_object_ref(globalStyle);
 	globalStyle = cmk_style_new();
 	return globalStyle;
@@ -131,6 +131,8 @@ CMKColor * cmk_overlay_colors(CMKColor *dest, const CMKColor *a, const CMKColor 
 const CMKColor * cmk_style_get_color(CMKStyle *self, const gchar *name)
 {
 	g_return_val_if_fail(CMK_IS_STYLE(self), NULL);
+	if(!name)
+		return NULL;
 	return g_hash_table_lookup(self->colors, name);
 }
 
