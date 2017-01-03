@@ -12,7 +12,7 @@
 G_BEGIN_DECLS
 
 #define CMK_TYPE_STYLE cmk_style_get_type()
-G_DECLARE_FINAL_TYPE(CMKStyle, cmk_style, CMK, STYLE, GObject);
+G_DECLARE_FINAL_TYPE(CmkStyle, cmk_style, CMK, STYLE, GObject);
 
 typedef struct {
 	float r,g,b,a;
@@ -25,18 +25,18 @@ void clutter_actor_set_background_cmk_color(ClutterActor *actor, const CMKColor 
 void cairo_set_source_cmk_color(cairo_t *cr, const CMKColor *color);
 CMKColor * cmk_overlay_colors(CMKColor *dest, const CMKColor *a, const CMKColor *b);
 
-CMKStyle * cmk_style_new();
+CmkStyle * cmk_style_new();
 
 /*
  * Returns a ref to the default style. You should unref with with
  * g_object_unref when you're done with it.
  */
-CMKStyle * cmk_style_get_default();
+CmkStyle * cmk_style_get_default();
 
-void  cmk_style_load_file(CMKStyle *style, const gchar *filePath, GError **error);
+void  cmk_style_load_file(CmkStyle *style, const gchar *filePath, GError **error);
 
-const CMKColor * cmk_style_get_color(CMKStyle *style, const gchar *name);
-void  cmk_style_set_color(CMKStyle *style, const gchar *name, const CMKColor *color);
+const CMKColor * cmk_style_get_color(CmkStyle *style, const gchar *name);
+void  cmk_style_set_color(CmkStyle *style, const gchar *name, const CMKColor *color);
 
 /*
  * "Background" colors are the same as colors set with cmk_style_set_color.
@@ -44,13 +44,13 @@ void  cmk_style_set_color(CMKStyle *style, const gchar *name, const CMKColor *co
  * 'name' as 'bgColorName-font', except that if no font color is found for
  * that background, solid black is returned instead of NULL.
  */
-void cmk_style_get_font_color_for_background(CMKStyle *style, const gchar *bgColorName, CMKColor *dest);
+void cmk_style_get_font_color_for_background(CmkStyle *style, const gchar *bgColorName, CMKColor *dest);
 
-void  cmk_style_set_bevel_radius(CMKStyle *style, float radius);
-float cmk_style_get_bevel_radius(CMKStyle *style);
+void  cmk_style_set_bevel_radius(CmkStyle *style, float radius);
+float cmk_style_get_bevel_radius(CmkStyle *style);
 
-void  cmk_style_set_padding(CMKStyle *style, float padding);
-float cmk_style_get_padding(CMKStyle *style);
+void  cmk_style_set_padding(CmkStyle *style, float padding);
+float cmk_style_get_padding(CmkStyle *style);
 
 G_END_DECLS
 

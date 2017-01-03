@@ -7,7 +7,7 @@
 #include "button.h"
 #include <math.h>
 
-struct _CMKButton
+struct _CmkButton
 {
 	ClutterActor parent;
 	ClutterText *text; // Owned by Clutter. Do not free.
@@ -27,26 +27,26 @@ static void cmk_button_set_property(GObject *self_, guint propertyId, const GVal
 static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static gboolean on_button_press(ClutterActor *actor, ClutterButtonEvent *event);
 static gboolean on_button_release(ClutterActor *actor, ClutterButtonEvent *event);
-static void on_style_changed(CMKWidget *self_, CMKStyle *style);
+static void on_style_changed(CmkWidget *self_, CmkStyle *style);
 static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas);
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CMKButton *self);
-static void on_notify_pressed(CMKButton *self, GParamSpec *spec, ClutterClickAction *action);
+static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self);
+static void on_notify_pressed(CmkButton *self, GParamSpec *spec, ClutterClickAction *action);
 
-G_DEFINE_TYPE(CMKButton, cmk_button, CMK_TYPE_WIDGET);
+G_DEFINE_TYPE(CmkButton, cmk_button, CMK_TYPE_WIDGET);
 
 
 
-CMKButton * cmk_button_new()
+CmkButton * cmk_button_new()
 {
 	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, NULL));
 }
 
-CMKButton * cmk_button_new_with_text(const gchar *text)
+CmkButton * cmk_button_new_with_text(const gchar *text)
 {
 	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, NULL));
 }
 
-static void cmk_button_class_init(CMKButtonClass *class)
+static void cmk_button_class_init(CmkButtonClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
 	base->dispose = cmk_button_dispose;
@@ -64,7 +64,7 @@ static void cmk_button_class_init(CMKButtonClass *class)
 	g_object_class_install_properties(base, PROP_LAST, properties);
 }
 
-static void cmk_button_init(CMKButton *self)
+static void cmk_button_init(CmkButton *self)
 {
 	ClutterContent *canvas = clutter_canvas_new();
 	g_signal_connect(canvas, "draw", G_CALLBACK(on_draw_canvas), self);
@@ -99,7 +99,7 @@ static void cmk_button_dispose(GObject *self_)
 static void cmk_button_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self_));
-	CMKButton *self = CMK_BUTTON(self_);
+	CmkButton *self = CMK_BUTTON(self_);
 	
 	switch(propertyId)
 	{
@@ -115,7 +115,7 @@ static void cmk_button_set_property(GObject *self_, guint propertyId, const GVal
 static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self_));
-	CMKButton *self = CMK_BUTTON(self_);
+	CmkButton *self = CMK_BUTTON(self_);
 	
 	switch(propertyId)
 	{
@@ -140,7 +140,7 @@ static gboolean on_button_release(ClutterActor *actor, ClutterButtonEvent *event
 	return TRUE;
 }
 
-static void on_style_changed(CMKWidget *self_, CMKStyle *style)
+static void on_style_changed(CmkWidget *self_, CmkStyle *style)
 {
 	clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self_)));
 	float padding = cmk_style_get_padding(style);
@@ -162,9 +162,9 @@ static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas 
 	clutter_canvas_set_size(CLUTTER_CANVAS(canvas), width, height);
 }
 
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CMKButton *self)
+static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
 {
-	CMKStyle *style = cmk_widget_get_style(CMK_WIDGET(self));
+	CmkStyle *style = cmk_widget_get_style(CMK_WIDGET(self));
 	double radius = cmk_style_get_bevel_radius(style);
 	double degrees = M_PI / 180.0;
 
@@ -186,26 +186,26 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	return TRUE;
 }
 
-static void on_notify_pressed(CMKButton *self, GParamSpec *spec, ClutterClickAction *action)
+static void on_notify_pressed(CmkButton *self, GParamSpec *spec, ClutterClickAction *action)
 {
 	gboolean pressed;
 	g_object_get(action, "pressed", &pressed, NULL);
 	g_message("pressed: %i", pressed);
 }
 
-void cmk_button_set_text(CMKButton *self, const gchar *text)
+void cmk_button_set_text(CmkButton *self, const gchar *text)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self));
 	clutter_text_set_text(self->text, text);
 }
 
-const gchar * cmk_button_get_text(CMKButton *self)
+const gchar * cmk_button_get_text(CmkButton *self)
 {
 	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
 	return clutter_text_get_text(self->text);
 }
 
-void cmk_button_set_background_color_name(CMKButton *self, const gchar *name)
+void cmk_button_set_background_color_name(CmkButton *self, const gchar *name)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self));
 	self->backgroundColorName = g_strdup(name);
@@ -215,7 +215,7 @@ void cmk_button_set_background_color_name(CMKButton *self, const gchar *name)
 	clutter_text_set_color(self->text, &cc);
 }
 
-const gchar * cmk_button_get_name(CMKButton *self)
+const gchar * cmk_button_get_name(CmkButton *self)
 {
 	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
 	const gchar *name = clutter_actor_get_name(CLUTTER_ACTOR(self));

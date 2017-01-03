@@ -13,11 +13,11 @@
 G_BEGIN_DECLS
 
 #define CMK_TYPE_WIDGET cmk_widget_get_type()
-G_DECLARE_DERIVABLE_TYPE(CMKWidget, cmk_widget, CMK, WIDGET, ClutterActor);
+G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
 
-typedef struct _CMKWidgetClass CMKWidgetClass;
+typedef struct _CmkWidgetClass CmkWidgetClass;
 
-struct _CMKWidgetClass
+struct _CmkWidgetClass
 {
 	ClutterActorClass parentClass;
 	
@@ -26,17 +26,17 @@ struct _CMKWidgetClass
 	 * emitted after the init function chain completes (during property
 	 * construction). Until then, the widget will have the default style.
 	 */
-	void (*style_changed) (CMKWidget *self, CMKStyle *style);
+	void (*style_changed) (CmkWidget *self, CmkStyle *style);
 };
 
 /*
- * CMKWidget is not abstract. Creating a widget on its own is effectively
- * just a ClutterActor with CMKStyle styling properties.
+ * CmkWidget is not abstract. Creating a widget on its own is effectively
+ * just a ClutterActor with CmkStyle styling properties.
  */
-CMKWidget * cmk_widget_new();
+CmkWidget * cmk_widget_new();
 
-void cmk_widget_set_style(CMKWidget *widget, CMKStyle *style);
-CMKStyle * cmk_widget_get_style(CMKWidget *widget);
+void cmk_widget_set_style(CmkWidget *widget, CmkStyle *style);
+CmkStyle * cmk_widget_get_style(CmkWidget *widget);
 
 /*
  * Instead of setting this widget's style directly, attach it to another
@@ -44,15 +44,15 @@ CMKStyle * cmk_widget_get_style(CMKWidget *widget);
  * will match it. This is mutually exclusive with cmk_widget_set_style,
  * however cmk_widget_get_style works with either style-setting method.
  *
- * CMKWidget does not retain a reference to its style parent. If the parent
+ * CmkWidget does not retain a reference to its style parent. If the parent
  * is destroyed, the parent will be automatically removed and the widget
  * will return to the default style (cmk_style_get_default).
  */
-void cmk_widget_set_style_parent(CMKWidget *widget, CMKWidget *parent);
-CMKWidget * cmk_widget_get_style_parent(CMKWidget *widget);
+void cmk_widget_set_style_parent(CmkWidget *widget, CmkWidget *parent);
+CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
 
-void cmk_widget_set_background_color(CMKWidget *widget, const gchar *namedColor);
-const gchar * cmk_widget_get_background_color(CMKWidget *widget);
+void cmk_widget_set_background_color(CmkWidget *widget, const gchar *namedColor);
+const gchar * cmk_widget_get_background_color(CmkWidget *widget);
 
 G_END_DECLS
 
