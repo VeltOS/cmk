@@ -39,7 +39,7 @@ static void cmk_widget_dispose(GObject *self_);
 static void cmk_widget_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void emit_style_changed(CmkWidget *self);
-static void update_actual_style(CmkWidget *self);
+static gboolean update_actual_style(CmkWidget *self);
 static void on_parent_background_changed(CmkWidget *self, CmkWidget *parent);
 static void on_parent_set(ClutterActor *self_, ClutterActor *prevParent);
 static void on_style_changed(CmkWidget *self, CmkStyle *style);
@@ -158,11 +158,11 @@ static void emit_style_changed(CmkWidget *self)
 	}
 }
 
-static void update_actual_style(CmkWidget *self)
+static gboolean update_actual_style(CmkWidget *self)
 {
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if(private->disposed)
-		return;	
+		return FALSE;	
 
 	// Disconnect last update's handlers
 	if(private->actualStyle)
@@ -215,7 +215,9 @@ static void update_actual_style(CmkWidget *self)
 	{
 		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_STYLE]);
 		emit_style_changed(self);
+		return TRUE;
 	}
+	return FALSE;
 }
 
 static void on_parent_background_changed(CmkWidget *self, CmkWidget *parent)
@@ -241,6 +243,7 @@ static void on_parent_set(ClutterActor *self_, ClutterActor *prevParent)
 	ClutterActor *newParent = clutter_actor_get_parent(self_);
 	if(CMK_IS_WIDGET(newParent))
 		g_signal_connect_swapped(newParent, "background-changed", G_CALLBACK(on_parent_background_changed), self_);
+	g_signal_emit(self_, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 }
 
 static void on_style_changed(CmkWidget *self, CmkStyle *style)
@@ -313,11 +316,11 @@ void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
 	}
 
 	PRIVATE(self)->styleParent = parent;
-	update_actual_style(self);
+	if(!update_actual_style(self))
+		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 
 	if(parent)
 	{
-		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 		g_signal_connect_swapped(parent, "notify::style", G_CALLBACK(on_style_parent_style_object_changed), self);
 		g_signal_connect_swapped(parent, "background-changed", G_CALLBACK(on_style_parent_background_changed), self);
 		g_signal_connect_swapped(parent, "destroy", G_CALLBACK(on_style_parent_destroy), self);
