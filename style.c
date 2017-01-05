@@ -61,7 +61,7 @@ static void cmk_style_init(CmkStyle *self)
 	cmk_style_set_color(self, "primary", cmk_set_color(&color, 1, 1, 1, 1));
 	cmk_style_set_color(self, "secondary", cmk_set_color(&color, 1, 1, 1, 1));
 	cmk_style_set_color(self, "accent", cmk_set_color(&color, 0.5, 0, 0, 1));
-	cmk_style_set_color(self, "hover", cmk_set_color(&color, 0, 0, 0, 0.1));
+	cmk_style_set_color(self, "hover", cmk_set_color(&color, 1, 1, 1, 0.1));
 	cmk_style_set_color(self, "activate", cmk_set_color(&color, 0, 0, 0, 0.1));
 	self->bevelRadius = 5.0;
 	self->padding = 20;

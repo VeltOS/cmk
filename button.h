@@ -13,7 +13,16 @@
 G_BEGIN_DECLS
 
 #define CMK_TYPE_BUTTON cmk_button_get_type()
-G_DECLARE_FINAL_TYPE(CmkButton, cmk_button, CMK, BUTTON, CmkWidget);
+G_DECLARE_DERIVABLE_TYPE(CmkButton, cmk_button, CMK, BUTTON, CmkWidget);
+
+typedef struct _CmkButtonClass CmkButtonClass;
+
+struct _CmkButtonClass
+{
+	CmkWidgetClass parentClass;
+
+	void (*activate) (CmkButton *self);
+};
 
 CmkButton *cmk_button_new();
 CmkButton *cmk_button_new_with_text(const gchar *text);
