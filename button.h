@@ -22,13 +22,6 @@ void cmk_button_set_text(CmkButton *button, const gchar *text);
 const gchar * cmk_button_get_text(CmkButton *button);
 
 /*
- * This only informs the button what font color to choose.
- * The actual background color should be drawn by whatever actor the button
- * is on top of.
- */
-void cmk_button_set_background_color_name(CmkButton *button, const gchar *name);
-
-/*
  * Returns the button actor's name (clutter_actor_set_name) if it is set,
  * or the button's text otherwise.
  */

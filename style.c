@@ -16,7 +16,7 @@ struct _CmkStyle
 
 enum
 {
-	SIGNAL_STYLE_CHANGED = 1,
+	SIGNAL_CHANGED = 1,
 	SIGNAL_LAST
 };
 
@@ -48,7 +48,7 @@ static void cmk_style_class_init(CmkStyleClass *class)
 {
 	G_OBJECT_CLASS(class)->dispose = cmk_style_dispose;
 
-	signals[SIGNAL_STYLE_CHANGED] = g_signal_new("style-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0);
+	signals[SIGNAL_CHANGED] = g_signal_new("changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
 static void cmk_style_init(CmkStyle *self)
@@ -56,7 +56,7 @@ static void cmk_style_init(CmkStyle *self)
 	self->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, free_table_color);
 	
 	// Default colors
-	CMKColor color;
+	CmkColor color;
 	cmk_style_set_color(self, "background", cmk_set_color(&color, 1, 1, 1, 1));
 	cmk_style_set_color(self, "primary", cmk_set_color(&color, 1, 1, 1, 1));
 	cmk_style_set_color(self, "secondary", cmk_set_color(&color, 1, 1, 1, 1));
@@ -76,10 +76,10 @@ static void cmk_style_dispose(GObject *self_)
 
 static void free_table_color(gpointer color)
 {
-	g_slice_free(CMKColor, color);
+	g_slice_free(CmkColor, color);
 }
 
-CMKColor * cmk_copy_color(CMKColor *dest, const CMKColor *source)
+CmkColor * cmk_copy_color(CmkColor *dest, const CmkColor *source)
 {
 	g_return_val_if_fail(dest, dest);
 	g_return_val_if_fail(source, dest);
@@ -90,7 +90,7 @@ CMKColor * cmk_copy_color(CMKColor *dest, const CMKColor *source)
 	return dest;
 }
 
-CMKColor * cmk_set_color(CMKColor *dest, float r, float g, float b, float a)
+CmkColor * cmk_set_color(CmkColor *dest, float r, float g, float b, float a)
 {
 	g_return_val_if_fail(dest, dest);
 	dest->r = r;
@@ -100,7 +100,7 @@ CMKColor * cmk_set_color(CMKColor *dest, float r, float g, float b, float a)
 	return dest;
 }
 
-ClutterColor cmk_to_clutter_color(const CMKColor * color)
+ClutterColor cmk_to_clutter_color(const CmkColor * color)
 {
 	ClutterColor cc;
 	clutter_color_init(&cc, 0, 0, 0, 0);
@@ -110,25 +110,25 @@ ClutterColor cmk_to_clutter_color(const CMKColor * color)
 	return cc;
 }
 
-void clutter_actor_set_background_cmk_color(ClutterActor *actor, const CMKColor *color)
+void clutter_actor_set_background_cmk_color(ClutterActor *actor, const CmkColor *color)
 {
 	ClutterColor cc = cmk_to_clutter_color(color);
 	clutter_actor_set_background_color(actor, &cc);
 }
 
-void cairo_set_source_cmk_color(cairo_t *cr, const CMKColor *color)
+void cairo_set_source_cmk_color(cairo_t *cr, const CmkColor *color)
 {
 	g_return_if_fail(color);
 	cairo_set_source_rgba(cr, color->r, color->g, color->b, color->a);
 }
 
-CMKColor * cmk_overlay_colors(CMKColor *dest, const CMKColor *a, const CMKColor *b)
+CmkColor * cmk_overlay_colors(CmkColor *dest, const CmkColor *a, const CmkColor *b)
 {
 	// TODO
 	return dest;
 }
 
-const CMKColor * cmk_style_get_color(CmkStyle *self, const gchar *name)
+const CmkColor * cmk_style_get_color(CmkStyle *self, const gchar *name)
 {
 	g_return_val_if_fail(CMK_IS_STYLE(self), NULL);
 	if(!name)
@@ -136,23 +136,30 @@ const CMKColor * cmk_style_get_color(CmkStyle *self, const gchar *name)
 	return g_hash_table_lookup(self->colors, name);
 }
 
-void cmk_style_set_color(CmkStyle *self, const gchar *name, const CMKColor *color)
+void cmk_style_set_color(CmkStyle *self, const gchar *name, const CmkColor *color)
 {
 	g_return_if_fail(CMK_IS_STYLE(self));
 
-	CMKColor *c = g_slice_new(CMKColor);
+	CmkColor *c = g_slice_new(CmkColor);
 	cmk_copy_color(c, color);
 	g_hash_table_insert(self->colors, g_strdup(name), c);
-	g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0);
+	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
 }
 
-void cmk_style_get_font_color_for_background(CmkStyle *self, const gchar *bgColorName, CMKColor *dest)
+void cmk_style_get_font_color_for_background(CmkStyle *self, const gchar *bgColorName, CmkColor *dest)
 {
 	cmk_set_color(dest, 0, 0, 0, 1); 
 	g_return_if_fail(CMK_IS_STYLE(self));
-	gchar *name = g_strdup_printf("%s-font", bgColorName);
-	const CMKColor *color = cmk_style_get_color(self, name);
-	g_free(name);
+	const CmkColor *color = NULL;
+	if(bgColorName)
+	{
+		gchar *name = g_strdup_printf("%s-font", bgColorName);
+		color = cmk_style_get_color(self, name);
+		g_free(name);
+	}
+	else
+		color = cmk_style_get_color(self, "font");
+		
 	if(color)
 		cmk_copy_color(dest, color);
 } 
@@ -161,7 +168,7 @@ void cmk_style_set_bevel_radius(CmkStyle *self, float radius)
 {
 	g_return_if_fail(CMK_IS_STYLE(self));
 	self->bevelRadius = radius;
-	g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0);
+	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
 }
 
 float cmk_style_get_bevel_radius(CmkStyle *self)
@@ -174,7 +181,7 @@ void cmk_style_set_padding(CmkStyle *self, float padding)
 {
 	g_return_if_fail(CMK_IS_STYLE(self));
 	self->padding = padding;
-	g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0);
+	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
 }
 
 float cmk_style_get_padding(CmkStyle *self)

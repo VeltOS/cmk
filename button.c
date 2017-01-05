@@ -11,7 +11,6 @@ struct _CmkButton
 {
 	ClutterActor parent;
 	ClutterText *text; // Owned by Clutter. Do not free.
-	gchar *backgroundColorName;
 };
 
 enum
@@ -22,12 +21,12 @@ enum
 
 static GParamSpec *properties[PROP_LAST];
 
-static void cmk_button_dispose(GObject *self_);
 static void cmk_button_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static gboolean on_button_press(ClutterActor *actor, ClutterButtonEvent *event);
 static gboolean on_button_release(ClutterActor *actor, ClutterButtonEvent *event);
 static void on_style_changed(CmkWidget *self_, CmkStyle *style);
+static void on_background_changed(CmkWidget *self_);
 static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self);
 static void on_notify_pressed(CmkButton *self, GParamSpec *spec, ClutterClickAction *action);
@@ -49,7 +48,6 @@ CmkButton * cmk_button_new_with_text(const gchar *text)
 static void cmk_button_class_init(CmkButtonClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
-	base->dispose = cmk_button_dispose;
 	base->set_property = cmk_button_set_property;
 	base->get_property = cmk_button_get_property;
 
@@ -58,6 +56,7 @@ static void cmk_button_class_init(CmkButtonClass *class)
 	actorClass->button_release_event = on_button_release;
 
 	CMK_WIDGET_CLASS(class)->style_changed = on_style_changed;
+	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
 	
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", "", G_PARAM_READWRITE);
 	
@@ -86,14 +85,6 @@ static void cmk_button_init(CmkButton *self)
 
 	self->text = CLUTTER_TEXT(clutter_text_new());
 	clutter_actor_add_child(actor, CLUTTER_ACTOR(self->text));
-
-	self->backgroundColorName = g_strdup("background");
-}
-
-static void cmk_button_dispose(GObject *self_)
-{
-	g_clear_pointer(&(CMK_BUTTON(self_)->backgroundColorName), g_free);
-	G_OBJECT_CLASS(cmk_button_parent_class)->dispose(self_);
 }
 
 static void cmk_button_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec)
@@ -147,12 +138,16 @@ static void on_style_changed(CmkWidget *self_, CmkStyle *style)
 	ClutterMargin margin = {padding, padding, padding, padding};
 	clutter_actor_set_margin(CLUTTER_ACTOR(CMK_BUTTON(self_)->text), &margin);
 	
-	CMKColor color;
-	cmk_style_get_font_color_for_background(style, "background", &color);
+	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_, style);
+}
+
+static void on_background_changed(CmkWidget *self_)
+{
+	const gchar *background = cmk_widget_get_background_color(self_);
+	CmkColor color;
+	cmk_style_get_font_color_for_background(cmk_widget_get_actual_style(self_), background, &color);
 	ClutterColor cc = cmk_to_clutter_color(&color);
 	clutter_text_set_color(CMK_BUTTON(self_)->text, &cc);
-
-	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_, style);
 }
 
 static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas)
@@ -164,7 +159,7 @@ static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas 
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
 {
-	CmkStyle *style = cmk_widget_get_style(CMK_WIDGET(self));
+	CmkStyle *style = cmk_widget_get_actual_style(CMK_WIDGET(self));
 	double radius = cmk_style_get_bevel_radius(style);
 	double degrees = M_PI / 180.0;
 
@@ -203,16 +198,6 @@ const gchar * cmk_button_get_text(CmkButton *self)
 {
 	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
 	return clutter_text_get_text(self->text);
-}
-
-void cmk_button_set_background_color_name(CmkButton *self, const gchar *name)
-{
-	g_return_if_fail(CMK_IS_BUTTON(self));
-	self->backgroundColorName = g_strdup(name);
-	CMKColor color;
-	cmk_style_get_font_color_for_background(cmk_widget_get_style(CMK_WIDGET(self)), name, &color);
-	ClutterColor cc = cmk_to_clutter_color(&color);
-	clutter_text_set_color(self->text, &cc);
 }
 
 const gchar * cmk_button_get_name(CmkButton *self)
