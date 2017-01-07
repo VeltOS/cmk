@@ -19,8 +19,6 @@ CmkIconLoader * cmk_icon_loader_new(void);
 /* Returns new ref to default loader or creates new loader if no default */
 CmkIconLoader * cmk_icon_loader_get_default(void);
 
-void cmk_icon_loader_test(CmkIconLoader *loader);
-
 /*
  * Sets the current GUI scale. This is used by cmk_icon_loader_lookup
  * for getting a scale. If 0 is passed for the scale, dconf will be

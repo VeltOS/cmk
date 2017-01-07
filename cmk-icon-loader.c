@@ -323,6 +323,7 @@ static IconTheme * load_theme(const gchar *name)
 
 static IconTheme * get_theme(CmkIconLoader *self, const gchar *name)
 {
+	// TODO: Check for changes to directory mtime or index.theme
 	IconTheme *theme = g_tree_lookup(self->themes, name);
 	if(theme)
 		return theme;
@@ -526,12 +527,4 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 
 	// TODO: Fallback names
 	return NULL;
-}
-
-void cmk_icon_loader_test(CmkIconLoader *self)
-{
-	gchar *path;
-	for(int i=0;i<1000;++i)
-		path = cmk_icon_loader_lookup(self, "telegram", 32);
-	g_message("path: %s", path);
 }
