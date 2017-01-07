@@ -372,7 +372,7 @@ static gchar * find_icon_in_theme(IconTheme *theme, const gchar *name, guint siz
 
 gchar * cmk_icon_loader_lookup(CmkIconLoader *self, const gchar *name, guint size)
 {
-	return cmk_icon_loader_lookup_full(self, name, TRUE, NULL, TRUE, size, self->scale);
+	return cmk_icon_loader_lookup_full(self, name, FALSE, NULL, TRUE, size, self->scale);
 }
 
 gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboolean useFallbackNames, const gchar *themeName, gboolean useFallbackTheme, guint size, guint scale)
@@ -389,10 +389,10 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 	if(!theme)
 	{
 		if(!useFallbackTheme)
-			return NULL;
+			return NULL; // Search pixmaps
 		theme = get_theme(self, "hicolor");
 		if(!theme)
-			return NULL;
+			return NULL; // Search pixmaps
 		triedHicolor = TRUE;
 	}
 	
@@ -401,7 +401,7 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 		return path;
 
 	if(!useFallbackTheme)
-		return NULL;
+		return NULL; // TOOD: Search pixmaps
 
 	if(theme->fallbacks)
 	{
