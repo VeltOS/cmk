@@ -6,6 +6,7 @@
 
 #include "cmk-icon-loader.h"
 #include <gio/gio.h>
+#include <librsvg/rsvg.h>
 
 typedef struct
 {
@@ -527,4 +528,69 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 
 	// TODO: Fallback names
 	return NULL;
+}
+
+static cairo_surface_t * load_svg(const gchar *path, guint size)
+{
+	RsvgHandle *handle = rsvg_handle_new_from_file(path, NULL);
+	if(!handle)
+		return NULL;
+
+	cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+	if(cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+	{
+		g_object_unref(handle);
+		return NULL;
+	}
+
+	cairo_t *cr = cairo_create(surface);
+	if(cairo_status(cr) != CAIRO_STATUS_SUCCESS)
+	{
+		cairo_surface_destroy(surface);
+		g_object_unref(handle);
+		return NULL;
+	}
+
+	RsvgDimensionData dimensions;
+	rsvg_handle_get_dimensions(handle, &dimensions);
+	gdouble factor = MIN((gdouble)size / dimensions.width, (gdouble)size / dimensions.height);
+	cairo_scale(cr, factor, factor);
+	gboolean r = rsvg_handle_render_cairo(handle, cr);
+	cairo_destroy(cr);
+	g_object_unref(handle);
+	if(!r)
+		g_clear_pointer(&surface, cairo_surface_destroy);
+	return surface;
+}
+
+static cairo_surface_t * load_png(const gchar *path, guint size)
+{
+	// TODO: Scale surface to size
+	cairo_surface_t *surface = cairo_image_surface_create_from_png(path);
+	if(cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+		g_clear_pointer(&surface, cairo_surface_destroy);
+	return surface;
+}
+
+cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *self, const gchar *path, guint size, guint scale, gboolean cache)
+{
+	size *= scale;
+
+	cairo_surface_t *surface = NULL;
+	if(g_str_has_suffix(path, ".svg"))
+		surface = load_svg(path, size);
+	else if(g_str_has_suffix(path, ".png"))
+		surface = load_png(path, size);
+	
+	// TODO: Support other image types
+	return surface;
+}
+
+cairo_surface_t * cmk_icon_loader_get(CmkIconLoader *self, const gchar *name, guint size)
+{
+	guint scale = cmk_icon_loader_get_scale(self);
+	gchar *path = cmk_icon_loader_lookup_full(self, name, FALSE, NULL, TRUE, size, scale);
+	cairo_surface_t *surface = cmk_icon_loader_load(self, path, size, scale, TRUE); 
+	g_free(path);
+	return surface;
 }

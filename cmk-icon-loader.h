@@ -8,6 +8,7 @@
 #define __CMK_ICON_LOADER_H__
 
 #include <glib-object.h>
+#include <cairo.h>
 
 G_BEGIN_DECLS
 
@@ -64,13 +65,21 @@ gchar * cmk_icon_loader_lookup(CmkIconLoader *loader, const gchar *name, guint s
  *       icon which can be scaled to the requested size instead.
  * scale: The current GUI scale. This is probably a DE-global value.
  * 		  The icon size passed to 'size' must NOT be affected by this scale.
+ * Returns NULL if the icon could not be found with the given options.
+ * Free the returned string with g_free.
  */
 gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboolean useFallbackNames, const gchar *theme, gboolean useFallbackTheme, guint size, guint scale);
 
 /*
  * Loads the icon. Set cache to TRUE if this icon is to be loaded often.
+ * Free the returned GdkPixbuf with 
  */
-//GdkPixbuf * cmk_icon_loader_load(CmkIconLoader *loader, const gchar *path, gboolean cache);
+cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *loader, const gchar *path, guint size, guint scale, gboolean cache);
+
+/*
+ * Shorthand for calling lookup and load.
+ */
+cairo_surface_t * cmk_icon_loader_get(CmkIconLoader *loader, const gchar *name, guint size);
 
 G_END_DECLS
 
