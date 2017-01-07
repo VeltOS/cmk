@@ -72,7 +72,10 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 
 /*
  * Loads the icon. Set cache to TRUE if this icon is to be loaded often.
- * Free the returned GdkPixbuf with 
+ * If the icon is not inherently scalable (ex SVG), it will not be scaled to
+ * match the given size. The returned surface's size should always be checked
+ * with cairo_image_surface_check_width/height, and be scaled if necessary.
+ * Free the returned surface with cairo_surface_destroy.
  */
 cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *loader, const gchar *path, guint size, guint scale, gboolean cache);
 
