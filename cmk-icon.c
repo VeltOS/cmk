@@ -29,6 +29,7 @@ static void cmk_icon_dispose(GObject *self_);
 static void cmk_icon_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void on_background_changed(CmkWidget *self_);
+static void on_default_icon_theme_changed(CmkIcon *self);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkIcon *self);
 static void update_canvas(ClutterActor *self_);
 
@@ -71,6 +72,7 @@ static void cmk_icon_init(CmkIcon *self)
 	g_signal_connect(CLUTTER_ACTOR(self), "notify::size", G_CALLBACK(update_canvas), NULL);
 
 	PRIVATE(self)->loader = cmk_icon_loader_get_default();
+	g_signal_connect_swapped(PRIVATE(self)->loader, "notify::default-theme", G_CALLBACK(on_default_icon_theme_changed), self);
 }
 
 static void cmk_icon_dispose(GObject *self_)
@@ -125,6 +127,12 @@ static void on_background_changed(CmkWidget *self_)
 {
 }
 
+static void on_default_icon_theme_changed(CmkIcon *self)
+{
+	if(PRIVATE(self)->themeName == NULL)
+		update_canvas(CLUTTER_ACTOR(self));
+}
+
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkIcon *self)
 {
 	cairo_save(cr);
@@ -153,11 +161,14 @@ static void update_canvas(ClutterActor *self_)
 	clutter_actor_get_size(CLUTTER_ACTOR(self_), &width, &height);
 	gfloat size = MIN(width, height);
 	guint scale = cmk_icon_loader_get_scale(private->loader);
-	gfloat scaledSize = size / scale;
+	gfloat unscaledSize = size / scale;
 
 	if(private->iconName)
-		private->iconSurface = cmk_icon_loader_get(private->loader, private->iconName, scaledSize);
-
+	{
+		gchar *path = cmk_icon_loader_lookup_full(private->loader, private->iconName, TRUE, private->themeName, TRUE, unscaledSize, scale);
+		private->iconSurface = cmk_icon_loader_load(private->loader, path, unscaledSize, scale, TRUE);
+	}
+	
 	if(!clutter_canvas_set_size(canvas, size, size))
 		clutter_content_invalidate(CLUTTER_CONTENT(canvas));
 }
@@ -165,10 +176,8 @@ static void update_canvas(ClutterActor *self_)
 void cmk_icon_set_icon(CmkIcon *self, const gchar *iconName)
 {
 	g_return_if_fail(CMK_IS_ICON(self));
-
 	g_free(PRIVATE(self)->iconName);
 	PRIVATE(self)->iconName = g_strdup(iconName);
-
 	update_canvas(CLUTTER_ACTOR(self));
 }
 
@@ -201,6 +210,7 @@ void cmk_icon_set_icon_theme(CmkIcon *self, const gchar *themeName)
 	g_return_if_fail(CMK_IS_ICON(self));
 	g_free(PRIVATE(self)->themeName);
 	PRIVATE(self)->themeName = g_strdup(themeName);
+	update_canvas(CLUTTER_ACTOR(self));
 }
 
 const gchar * cmk_icon_get_icon_theme(CmkIcon *self)
