@@ -71,13 +71,19 @@ static void cmk_shadow_container_get_preferred_width(ClutterActor *self_, gfloat
 {
 	// TOOD: Care about more than one child?
 	ClutterActor *child = clutter_actor_get_first_child(self_);
-	clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
+	*minWidth = 0;
+	*natWidth = 0;
+	if(child)
+		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
 }
 
 static void cmk_shadow_container_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	ClutterActor *child = clutter_actor_get_first_child(self_);
-	clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
+	*minHeight = 0;
+	*natHeight = 0;
+	if(child)
+		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
 }
 
 static void on_child_added(ClutterContainer *self_, ClutterActor *actor)
