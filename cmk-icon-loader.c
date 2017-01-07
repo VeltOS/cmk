@@ -5,6 +5,7 @@
  */
 
 #include "cmk-icon-loader.h"
+#include <gio/gio.h>
 
 typedef struct
 {
@@ -34,17 +35,26 @@ typedef struct
 struct _CmkIconLoader
 {
 	GObject parent;
-	guint scale;
+	guint setScale;
+	gchar *setDefaultTheme;
+	GSettings *settings;
 	GTree *themes;
 };
 
 enum
 {
-	SIGNAL_ICON_THEME_CHANGED = 1,
-	SIGNAL_LAST
+	PROP_SCALE = 1,
+	PROP_DEFAULT_THEME,
+	PROP_LAST
 };
 
+static GParamSpec *properties[PROP_LAST];
+
 static void cmk_icon_loader_dispose(GObject *self_);
+static void cmk_icon_loader_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
+static void cmk_icon_loader_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
+static void on_scale_changed(CmkIconLoader *self);
+static void on_default_theme_changed(CmkIconLoader *self);
 static void free_icon_theme(IconTheme *theme);
 
 G_DEFINE_TYPE(CmkIconLoader, cmk_icon_loader, G_TYPE_OBJECT);
@@ -67,32 +77,120 @@ CmkIconLoader * cmk_icon_loader_get_default(void)
 
 static void cmk_icon_loader_class_init(CmkIconLoaderClass *class)
 {
-	G_OBJECT_CLASS(class)->dispose = cmk_icon_loader_dispose;
+	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->dispose = cmk_icon_loader_dispose;
+	base->set_property = cmk_icon_loader_set_property;
+	base->get_property = cmk_icon_loader_get_property;
+
+	properties[PROP_SCALE] = g_param_spec_int("scale", "scale", "Global GUI scale", 0, 10, 1, G_PARAM_READWRITE);
+	properties[PROP_DEFAULT_THEME] = g_param_spec_string("default-theme", "default-theme", "Global default icon theme", NULL, G_PARAM_READWRITE);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
 }
 
 static void cmk_icon_loader_init(CmkIconLoader *self)
 {
+	self->setScale = 1;
 	self->themes = g_tree_new_full((GCompareDataFunc)g_strcmp0, NULL, g_free, (GDestroyNotify)free_icon_theme);
+	self->settings = g_settings_new("org.gnome.desktop.interface");
+	g_signal_connect_swapped(self->settings, "changed::scaling-factor", G_CALLBACK(on_scale_changed), self);
+	g_signal_connect_swapped(self->settings, "changed::icon-theme", G_CALLBACK(on_default_theme_changed), self);
 }
 
 static void cmk_icon_loader_dispose(GObject *self_)
 {
 	CmkIconLoader *self = CMK_ICON_LOADER(self_);
 	g_clear_pointer(&self->themes, g_tree_unref);
+	g_clear_pointer(&self->setDefaultTheme, g_free);
+	g_clear_object(&self->settings);
 	G_OBJECT_CLASS(cmk_icon_loader_parent_class)->dispose(self_);
+}
+
+static void cmk_icon_loader_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec)
+{
+	g_return_if_fail(CMK_IS_ICON_LOADER(self_));
+	CmkIconLoader *self = CMK_ICON_LOADER(self_);
+	
+	switch(propertyId)
+	{
+	case PROP_SCALE:
+		cmk_icon_loader_set_scale(self, g_value_get_int(value));
+		break;
+	case PROP_DEFAULT_THEME:
+		cmk_icon_loader_set_default_theme(self, g_value_get_string(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
+		break;
+	}
+}
+
+static void cmk_icon_loader_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec)
+{
+	g_return_if_fail(CMK_IS_ICON_LOADER(self_));
+	CmkIconLoader *self = CMK_ICON_LOADER(self_);
+	
+	switch(propertyId)
+	{
+	case PROP_SCALE:
+		g_value_set_int(value, cmk_icon_loader_get_scale(self));
+		break;
+	case PROP_DEFAULT_THEME:
+		g_value_set_string(value, cmk_icon_loader_get_default_theme(self));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
+		break;
+	}
+}
+
+static void on_scale_changed(CmkIconLoader *self)
+{
+	if(self->setScale != 0)
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_SCALE]);
+}
+
+static void on_default_theme_changed(CmkIconLoader *self)
+{
+	if(!self->setDefaultTheme)
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_DEFAULT_THEME]);
 }
 
 void cmk_icon_loader_set_scale(CmkIconLoader *self, guint scale)
 {
 	g_return_if_fail(CMK_ICON_LOADER(self));
-	g_return_if_fail(scale == 0);
-	self->scale = scale;
+	if(self->setScale != scale)
+	{
+		self->setScale = scale;
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_SCALE]);
+	}
 }
 
 guint cmk_icon_loader_get_scale(CmkIconLoader *self)
 {
 	g_return_val_if_fail(CMK_ICON_LOADER(self), 0);
-	return self->scale;
+	if(self->setScale != 0)
+		return self->setScale;
+	return g_settings_get_int(self->settings, "scaling-factor");
+}
+
+void cmk_icon_loader_set_default_theme(CmkIconLoader *self, const gchar *theme)
+{
+	g_return_if_fail(CMK_ICON_LOADER(self));
+	if(g_strcmp0(self->setDefaultTheme, theme) != 0)
+	{
+		g_free(self->setDefaultTheme);
+		self->setDefaultTheme = g_strdup(theme);
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_DEFAULT_THEME]);
+	}
+}
+
+const gchar * cmk_icon_loader_get_default_theme(CmkIconLoader *self)
+{
+	g_return_val_if_fail(CMK_ICON_LOADER(self), NULL);
+	if(self->setDefaultTheme)
+		return self->setDefaultTheme;
+	return g_settings_get_string(self->settings, "icon-theme");
 }
 
 static void free_icon_theme(IconTheme *theme)
@@ -372,15 +470,15 @@ static gchar * find_icon_in_theme(IconTheme *theme, const gchar *name, guint siz
 
 gchar * cmk_icon_loader_lookup(CmkIconLoader *self, const gchar *name, guint size)
 {
-	return cmk_icon_loader_lookup_full(self, name, FALSE, NULL, TRUE, size, self->scale);
+	return cmk_icon_loader_lookup_full(self, name, FALSE, NULL, TRUE, size, cmk_icon_loader_get_scale(self));
 }
 
 gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboolean useFallbackNames, const gchar *themeName, gboolean useFallbackTheme, guint size, guint scale)
 {
 	g_return_val_if_fail(CMK_IS_ICON_LOADER(self), NULL);
 	
-	//if(!themeName)
-	//	themeName = cmk_icon_loader_get_default_theme(self);
+	if(!themeName)
+		themeName = cmk_icon_loader_get_default_theme(self);
 	//if(!themeName)
 	// 	just search pixmaps
 
@@ -434,6 +532,6 @@ void cmk_icon_loader_test(CmkIconLoader *self)
 {
 	gchar *path;
 	for(int i=0;i<1000;++i)
-		path = cmk_icon_loader_lookup_full(self, "telegram", FALSE, "Paper", TRUE, 32, 1); 
+		path = cmk_icon_loader_lookup(self, "telegram", 32);
 	g_message("path: %s", path);
 }
