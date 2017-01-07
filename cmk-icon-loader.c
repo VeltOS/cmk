@@ -17,12 +17,23 @@ typedef struct
 	guint maxSize;
 	gboolean scalable; // Shorthand for "minSize == maxSize"
 	guint scale; // Not same as "scalable"; this is for icons on HiDPI screens using x2,x3,etc GUI scale
-	
-	// When this group is first used for looking up an icon, this icon list is
-	// populated. It acts as a cache, and should be cleared if the mtime on
-	// the theme's directory or the index.theme file is changed.
-	GTree *icons;
+	gboolean searched;
 } IconThemeGroup;
+
+enum
+{
+	FEXT_SVG=1,
+	FEXT_PNG=2,
+	//FEXT_JPG=4,
+};
+
+typedef struct _IconInfo IconInfo;
+struct _IconInfo
+{
+	IconThemeGroup *group; // Do not free
+	guchar extFlags; // Bitfield of FEXT_* file extension flags
+	IconInfo *next; // Next version of this icon
+};
 
 typedef struct
 {
@@ -31,6 +42,11 @@ typedef struct
 	gchar **fallbacks; // NULL terminated
 	gsize numGroups;
 	IconThemeGroup *groups;
+	
+	// Includes all icons from groups that have the "searched" flag set
+	// Key: icon name (string)
+	// Value: IconInfo * (a linked list)
+	GTree *icons;
 } IconTheme;
 
 struct _CmkIconLoader
@@ -203,11 +219,21 @@ static void free_icon_theme(IconTheme *theme)
 	{
 		g_free(theme->groups[i].context);
 		g_free(theme->groups[i].where);
-		if(theme->groups[i].icons)
-			g_tree_unref(theme->groups[i].icons);
 	}
 	g_free(theme->groups);
+	if(theme->icons)
+		g_tree_unref(theme->icons);
 	g_free(theme);
+}
+
+static void free_icon_info_list(IconInfo *base)
+{
+	for(IconInfo *it=base;it!=NULL;)
+	{
+		IconInfo *next=it->next;
+		g_free(it);
+		it=next;
+	}
 }
 
 static gboolean load_theme_group(GKeyFile *index, IconThemeGroup *group)
@@ -270,6 +296,7 @@ static IconTheme * load_theme_from(const gchar *themeName, const gchar *dir)
 	theme->where = g_strdup_printf("%s/%s/", dir, themeName);
 
 	theme->fallbacks = g_key_file_get_string_list(index, "Icon Theme", "Inherits", NULL, NULL);
+	theme->icons = g_tree_new_full((GCompareDataFunc)g_strcmp0, NULL, g_free, (GDestroyNotify)free_icon_info_list);
 
 	// TODO: "ScaledDirectories" folder
 	gchar **directories = g_key_file_get_string_list(index, "Icon Theme", "Directories", &theme->numGroups, NULL);
@@ -334,74 +361,53 @@ static IconTheme * get_theme(CmkIconLoader *self, const gchar *name)
 	return theme;
 }
 
-static GList * get_group_list_for_icon(IconTheme *theme, const gchar *name, guint size, guint scale)
+static IconInfo * icon_info_list_add(IconInfo *base, IconThemeGroup *group, guint extFlag)
 {
-	GList *groups = NULL;
-	
-	// Find all groups that have a size range that 'size' falls within
-	// 'groups' is reverse-ordered, but it will be reversed again as they
-	// move to 'ordered'
-	for(gsize i=0;i<theme->numGroups;++i)
+	for(IconInfo *it=base;it!=NULL;it=it->next)
 	{
-		if(size >= theme->groups[i].minSize && size <= theme->groups[i].maxSize)
-			groups = g_list_prepend(groups, &theme->groups[i]);
+		if(it->group == group)
+		{
+			it->extFlags |= extFlag;
+			return base;
+		}
 	}
 	
-	GList *ordered = NULL;	
+	IconInfo *info = g_new(IconInfo, 1);
+	info->group = group;
+	info->extFlags = extFlag;
+	info->next = NULL;
 
-	/*
-	 * Order
-	 * XDG doesn't give a specific order to look for icons, so I'm using:
-	 * 1. Perfect size, correct GUI scale
-	 * 2. Scalable, correct GUI scale
-	 * 3. Scalable, wrong GUI scale
-	 * 4. Perfect size, wrong GUI scale
- 	 */	
+	if(!base)
+		return info;
 
-	// Moves all groups from 'groups' to 'ordered' that match the given condition
-	// Reverses 'groups', making all items matching condition be added to 'ordered'
-	// in the same order they were in 'theme->groups'
-	#define GROUPS_MATCHING_COND(condition) \
-		for(GList *it=groups;it!=NULL;) { \
-			IconThemeGroup *group = (IconThemeGroup *)it->data; \
-			GList *next = it->next; \
-			if(condition) { \
-				groups = g_list_remove_link(groups, it); \
-				ordered = g_list_concat(it, ordered); \
-			} \
-			it = next; \
-		}
-
-	// Add condition sets in reverse order, so the final 'ordered' list has
-	// the best-matching groups at the start
-	GROUPS_MATCHING_COND(group->size == size && group->scale != scale)
-	GROUPS_MATCHING_COND(group->size != size && group->scale != scale)
-	GROUPS_MATCHING_COND(group->size != size && group->scale == scale)
-	GROUPS_MATCHING_COND(group->size == size && group->scale == scale)
-	#undef GROUPS_MATCHING_COND
-	// 'groups' should always have 0 items after this
-
-	return ordered;
+	// Doesn't matter where the new one goes as long as base isn't modified
+	if(base->next)
+		info->next = base->next;
+	base->next = info;
+	return base;
 }
 
-static void free_ext_list(gpointer extList)
+static guint fext_to_flag(const gchar *ext)
 {
-	g_list_free_full((GList *)extList, g_free);
+	guint extFlag = 0;
+	if(g_strcmp0(ext, "svg") == 0)
+		extFlag = FEXT_SVG;
+	else if(g_strcmp0(ext, "png") == 0)
+		extFlag = FEXT_PNG;
+	return extFlag;
 }
 
-static void populate_group_icons(IconTheme *theme, IconThemeGroup *group)
+static void search_theme_group(IconTheme *theme, IconThemeGroup *group)
 {
-	// Don't bother if the group has already been populated
-	if(group->icons)
+	if(group->searched)
 		return;
 
+	group->searched = TRUE;
 	gchar *path = g_strdup_printf("%s/%s/", theme->where, group->where);
 	GDir *dir = g_dir_open(path, 0, NULL);
 	g_free(path);
 	if(!dir)
 		return;
-
-	group->icons = g_tree_new_full((GCompareDataFunc)g_strcmp0, NULL, g_free, free_ext_list);
 
 	const gchar *entry = NULL;
 	while(entry = g_dir_read_name(dir))
@@ -409,65 +415,93 @@ static void populate_group_icons(IconTheme *theme, IconThemeGroup *group)
 		const gchar *extStart = g_strrstr(entry, ".");
 		gsize basenameLength = extStart - entry;
 		gchar *name = g_strndup(entry, basenameLength);
-		gchar *ext = g_strdup(extStart+1);
-		GList *extList = NULL;
-		GList *avoidWarning = NULL; // Return value of append isn't necessary here
-		// If the icon already exists, add this new extension
-		if(g_tree_lookup_extended(group->icons, name, NULL, (gpointer *)&extList) && extList)
-			avoidWarning = g_list_append(extList, ext);
+		guint extFlag = fext_to_flag(extStart+1);
+		if(extFlag == 0)
+			continue;
+
+		IconInfo *infoList = NULL;
+		if(g_tree_lookup_extended(theme->icons, name, NULL, (gpointer *)&infoList) && infoList)
+			icon_info_list_add(infoList, group, extFlag);
 		else
-			g_tree_insert(group->icons, name, g_list_append(NULL, ext));
+			g_tree_insert(theme->icons, name, icon_info_list_add(NULL, group, extFlag));
 	}
 	
 	g_dir_close(dir);
 }
 
-static gchar * find_icon_in_theme(IconTheme *theme, const gchar *name, guint size, guint scale)
+static void search_possible_theme_groups(IconTheme *theme, const gchar *name, guint size)
+{	
+	for(gsize i=0;i<theme->numGroups;++i)
+		if(size >= theme->groups[i].minSize && size <= theme->groups[i].maxSize)
+			search_theme_group(theme, &theme->groups[i]);
+}
+
+gchar * find_icon_in_theme(IconTheme *theme, const gchar *name, guint size, guint scale)
 {
-	// Get a list of groups this icon could possibly be in, ordered from
-	// best to worst
-	GList *groups = get_group_list_for_icon(theme, name, size, scale);
-	
-	// Look for the icon
-	IconThemeGroup *group = NULL;
-	GList *exts = NULL;
-	for(GList *it=groups;it!=NULL;it=it->next)
-	{
-		group = (IconThemeGroup *)(it->data);
-		populate_group_icons(theme, group);
-		exts = g_tree_lookup(group->icons, name);
-		if(exts)
-			break;
-	}
-	
-	if(!exts || !group)
+	search_possible_theme_groups(theme, name, size);
+	IconInfo *infoList = g_tree_lookup(theme->icons, name);
+	if(!infoList)
 		return NULL;
+
+	IconInfo *icon = NULL;
+
+	#define ICON_MATCHING_COND(condition) \
+		if(!icon) { \
+			for(IconInfo *it=infoList;it!=NULL;it=it->next) { \
+				if(condition) { \
+					icon = it; \
+					break; \
+				} \
+			} \
+		}
+
+	#define ICMATCH_SCALE (it->group->scale == scale)
+	#define ICMATCH_SIZE(x) (it->group->size == (size*x))
+	#define ICWITHIN_SIZE(x) ((size*x) >= it->group->minSize && (size*x) <= it->group->maxSize)
 	
+	/*
+	 * Look for the best fitting icon, in this order:
+	 * 1. scale match + size match (perfect)
+	 * 2. scale match + scalable within size bounds
+	 * 3. wrong scale + size match at scale size
+	 * 4. wrong scale + scalable within size bounds at scale size
+	 * 5. anything else is going to look very bad, order doesn't really matter
+	 */
+	ICON_MATCHING_COND(ICMATCH_SCALE && ICMATCH_SIZE(1))
+	ICON_MATCHING_COND(ICMATCH_SCALE && ICWITHIN_SIZE(1))
+	ICON_MATCHING_COND(!ICMATCH_SCALE && ICMATCH_SIZE(scale))
+	ICON_MATCHING_COND(!ICMATCH_SCALE && ICWITHIN_SIZE(scale))
+	if(!icon) icon = infoList;
+	#undef ICWITHIN_SIZE
+	#undef ICMATCH_SIZE
+	#undef ICMATCH_SCALE
+	#undef ICON_MATCHING_COND
+
 	/*
 	 * We've found an icon, but there may be multiple filetypes for the same
 	 * icon. Prefer a non-scalable type (ex. png) if the icon doesn't need
 	 * to be scaled, since it'll load faster. Otherwise, prefer .svg.
 	 */
 	
-	gboolean needsScaling = (group->size != size);
+	#define ICRETURN(ext) g_strdup_printf("%s/%s/%s." ext, theme->where, icon->group->where, name)
+
+	gboolean needsScaling = (icon->group->size != size);
 	if(needsScaling)
 	{
-		for(GList *it=exts;it!=NULL;it=it->next)
-		{
-			if(g_strcmp0(it->data, "svg") == 0)
-				return g_strdup_printf("%s/%s/%s.svg", theme->where, group->where, name);
-		}
+		if((icon->extFlags & FEXT_SVG) == FEXT_SVG)
+			return ICRETURN("svg");
+		else if((icon->extFlags & FEXT_PNG) == FEXT_PNG)
+			return ICRETURN("png");
 	}
 	else
 	{
-		for(GList *it=exts;it!=NULL;it=it->next)
-		{
-			if(g_strcmp0(it->data, "svg") != 0)
-				return g_strdup_printf("%s/%s/%s.%s", theme->where, group->where, name, it->data);
-		}
+		if((icon->extFlags & FEXT_PNG) == FEXT_PNG)
+			return ICRETURN("png");
+		else if((icon->extFlags & FEXT_SVG) == FEXT_SVG)
+			return ICRETURN("svg");
 	}
-	
-	return g_strdup_printf("%s/%s/%s.%s", theme->where, group->where, name, exts->data);
+	#undef ICRETURN
+	return NULL;
 }
 
 gchar * cmk_icon_loader_lookup(CmkIconLoader *self, const gchar *name, guint size)
@@ -495,7 +529,7 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 			return NULL; // Search pixmaps
 		triedHicolor = TRUE;
 	}
-	
+
 	gchar *path = find_icon_in_theme(theme, name, size, scale);
 	if(path)
 		return path;
@@ -507,10 +541,15 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 	{
 		for(guint i=0;theme->fallbacks[i]!=NULL;++i)
 		{
-			if(triedHicolor && g_strcmp0(theme->fallbacks[i], "hicolor") == 0)
-				continue;
-			theme = get_theme(self, theme->fallbacks[i]);
-			gchar *path = find_icon_in_theme(theme, name, size, scale);
+			if(g_strcmp0(theme->fallbacks[i], "hicolor") == 0)
+			{
+				if(triedHicolor)
+					continue;
+				triedHicolor = TRUE;
+			}
+			IconTheme *t = get_theme(self, theme->fallbacks[i]);
+			if(t)
+				path = find_icon_in_theme(t, name, size, scale);
 			if(path)
 				return path;
 		}
@@ -519,7 +558,7 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 	if(!triedHicolor)
 	{
 		theme = get_theme(self, "hicolor");
-		gchar *path = find_icon_in_theme(theme, name, size, scale);
+		path = find_icon_in_theme(theme, name, size, scale);
 		if(path)
 			return path;
 	}
