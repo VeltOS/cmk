@@ -24,11 +24,17 @@ struct _CmkButtonClass
 	void (*activate) (CmkButton *self);
 };
 
-CmkButton *cmk_button_new();
+CmkButton *cmk_button_new(void);
 CmkButton *cmk_button_new_with_text(const gchar *text);
+
+CmkButton *cmk_beveled_button_new(void);
+CmkButton *cmk_beveled_button_new_with_text(const gchar *text);
 
 void cmk_button_set_text(CmkButton *button, const gchar *text);
 const gchar * cmk_button_get_text(CmkButton *button);
+
+void cmk_button_set_beveled(CmkButton *button, gboolean beveled);
+gboolean cmk_button_get_beveled(CmkButton *button);
 
 /*
  * Returns the button actor's name (clutter_actor_set_name) if it is set,
