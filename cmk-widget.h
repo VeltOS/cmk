@@ -8,7 +8,6 @@
 #define __CMK_WIDGET_H__
 
 #include <clutter/clutter.h>
-#include "style.h"
 
 G_BEGIN_DECLS
 
@@ -23,11 +22,9 @@ struct _CmkWidgetClass
 	
 	/*
 	 * Emitted when a style property changes on the widget. This may include
-	 * changes to the style of parent widgets. Automatically emitted during
-	 * class property construction; until then, the widget has a NULL style.
-	 * Must chain up to parent class.
+	 * changes to the style of parent widgets. Must chain up to parent class.
 	 */
-	void (*style_changed) (CmkWidget *self, CmkStyle *style);
+	void (*style_changed) (CmkWidget *self);
 
 	/*
 	 * Emitted when the value returned by cmk_widget_get_background_color
@@ -38,43 +35,66 @@ struct _CmkWidgetClass
 
 /*
  * CmkWidget is not abstract. Creating a widget on its own is effectively
- * just a ClutterActor with CmkStyle styling properties.
+ * just a ClutterActor with styling properties.
  */
 CmkWidget * cmk_widget_new();
 
 /*
- * Set the widget's style. Set the style to NULL to inherit the parent's
- * style, and to receive style update signals from the parent. The default
- * value is to inherit (NULL) if the parent is a CmkWidget, and otherwise
- * to use the default style (cmk_style_get_default).
+ * This is a special instance of CmkWidget which is used for styling when no
+ * inherited values can be found. You may set styles on it, but it should not
+ * be parented/mapped. The return value should be unrefed after use, unless
+ * its being used to set global styles, in which case you can leave it around
+ * for the duration of your program.
  */
-void cmk_widget_set_style(CmkWidget *widget, CmkStyle *style);
-
-/*
- * Returns the "actual" style of the widget. That is, if cmk_widget_set_style
- * has been called with a non-NULL value, this function returns that value.
- * Otherwise, this function returns the parent's style or the default style.
- * This is the value of the 'style' class property.
- */
-CmkStyle * cmk_widget_get_actual_style(CmkWidget *widget);
-
-/*
- * Returns the style, not taking into account the parent. This is always the
- * same value passed to cmk_widget_set_style.
- */
-CmkStyle * cmk_widget_get_style(CmkWidget *widget);
+CmkWidget * cmk_widget_get_style_default();
 
 /*
  * Instead of using the widget's actual parent, use a different widget to
- * inherit styles from. This only has any effect if the widget is
- * inheriting the parent's style. Set parent to NULL to unset.
+ * inherit styles from. This should probably only be used if there is a
+ * non-CmkWidget actor between two CmkWidgets, to connect the 3rd layer to
+ * the 1st. Use NULL to unset.
  *
  * CmkWidget does not retain a reference to its style parent. If the parent
  * is destroyed, the "style parent" association will automatically be
  * removed and the widget will return to using its real parent or no parent.
  */
 void cmk_widget_set_style_parent(CmkWidget *widget, CmkWidget *parent);
+
+/*
+ * Gets the style parent set with cmk_widget_set_style_parent.
+ */
 CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
+
+/*
+ * Gets a named color set with cmk_widget_set_style_color. If it is not
+ * found, an inherited value is returned. If there is no inherited value,
+ * NULL is returned.
+ */
+const ClutterColor * cmk_widget_style_get_color(CmkWidget *widget, const gchar *name);
+
+/*
+ * Sets a named color that can be used to draw the widget. This color will be
+ * inherited by child CmkWidgets.
+ */
+void cmk_widget_style_set_color(CmkWidget *widget, const gchar *name, const ClutterColor *color);
+
+/*
+ * Getters and setters for other style properties. If these are set to invalid
+ * values (ex. -1), an inherited value will be used when calling the getter.
+ */
+void cmk_widget_style_set_bevel_radius(CmkWidget *widget, float radius);
+float cmk_widget_style_get_bevel_radius(CmkWidget *widget);
+void cmk_widget_style_set_padding(CmkWidget *widget, float padding);
+float cmk_widget_style_get_padding(CmkWidget *widget);
+void cmk_widget_style_set_scale_factor(CmkWidget *widget, float scale);
+float cmk_widget_style_get_scale_factor(CmkWidget *widget);
+
+/*
+ * Attempts to find a foreground color from the current background color.
+ * This first tries to use the named color "<background name>-foreground",
+ * then tries "foreground", and if both fail, returns solid black.
+ */
+const ClutterColor * cmk_widget_get_foreground_color(CmkWidget *widget);
 
 /*
  * Similar to clutter_actor_set_background_color, except it uses the named
@@ -82,7 +102,7 @@ CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
  * background (the default).
  * See cmk_widget_set_draw_background_color.
  */
-void cmk_widget_set_background_color(CmkWidget *widget, const gchar *namedColor);
+void cmk_widget_set_background_color_name(CmkWidget *widget, const gchar *namedColor);
 
 /*
  * If TRUE, cmk_widget_set_background_color will actually call
@@ -101,7 +121,19 @@ void cmk_widget_set_draw_background_color(CmkWidget *widget, gboolean draw);
  * background color. If this method returns NULL, the background color is
  * unknown, and foreground actors should use a default color.
  */
-const gchar * cmk_widget_get_background_color(CmkWidget *widget);
+const gchar * cmk_widget_get_background_color_name(CmkWidget *widget);
+
+/*
+ * Convenience method for calling cmk_widget_get_background_color_name
+ * and cmk_widget_style_get_color, except returns solid white if no color
+ * is found.
+ */
+const ClutterColor * cmk_widget_get_background_color(CmkWidget *widget);
+
+/*
+ * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba.
+ */
+void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
 
 G_END_DECLS
 

@@ -9,19 +9,24 @@
 typedef struct _CmkWidgetPrivate CmkWidgetPrivate;
 struct _CmkWidgetPrivate
 {
-	CmkStyle *style;
-	CmkStyle *actualStyle;
 	CmkWidget *styleParent; // Not ref'd
 	CmkWidget *actualStyleParent; // styleParent, real parent, or NULL (not ref'd)
+	GHashTable *colors;
+	float bevelRadius;
+	float padding;
+	float scaleFactor;
+
 	gchar *backgroundColorName;
 	gboolean drawBackground;
-	gboolean disposed;
+
+	gboolean emittingStyleChanged;
+	gboolean disposed; // Various callbacks (ex clutter canvas draws) like to emit even after their actor has been disposed. This is checked to avoid runtime "CRITICAL" messages on disposed objects (and unnecessary processing)
 };
 
 enum
 {
-	PROP_STYLE = 1,
-	PROP_BACKGROUND_COLOR_NAME,
+	// TODO: Make all style properties into GObject properties
+	PROP_BACKGROUND_COLOR_NAME = 1,
 	PROP_LAST
 };
 
@@ -38,23 +43,29 @@ static guint signals[SIGNAL_LAST];
 static void cmk_widget_dispose(GObject *self_);
 static void cmk_widget_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
-static void emit_style_changed(CmkWidget *self);
-static gboolean update_actual_style(CmkWidget *self);
-static void on_parent_background_changed(CmkWidget *self, CmkWidget *parent);
-static void on_parent_set(ClutterActor *self_, ClutterActor *prevParent);
-static void on_style_changed(CmkWidget *self, CmkStyle *style);
-static void on_style_parent_style_object_changed(CmkWidget *self, GParamSpec *spec, CmkWidget *parent);
-static void on_style_parent_background_changed(CmkWidget *self, CmkWidget *parent);
-static void on_style_parent_destroy(CmkWidget *self, CmkWidget *parent);
+static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent);
+static void set_actual_style_parent(CmkWidget *self, CmkWidget *parent);
+static void update_actual_style_parent(CmkWidget *self);
+static void on_style_changed(CmkWidget *self);
 static void on_background_changed(CmkWidget *self);
 static void update_named_background_color(CmkWidget *self);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, CLUTTER_TYPE_ACTOR);
 #define PRIVATE(widget) ((CmkWidgetPrivate *)cmk_widget_get_instance_private(widget))
 
-CmkWidget * cmk_widget_new()
+CmkWidget * cmk_widget_new(void)
 {
 	return CMK_WIDGET(g_object_new(CMK_TYPE_WIDGET, NULL));
+}
+
+static CmkWidget *styleDefault = NULL;
+
+CmkWidget * cmk_widget_get_style_default(void)
+{
+	if(CMK_IS_WIDGET(styleDefault))
+		return g_object_ref(styleDefault);
+	styleDefault = cmk_widget_new();
+	return styleDefault;
 }
 
 static void cmk_widget_class_init(CmkWidgetClass *class)
@@ -64,48 +75,36 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	base->get_property = cmk_widget_get_property;
 	base->set_property = cmk_widget_set_property;
 	
-	CLUTTER_ACTOR_CLASS(class)->parent_set = on_parent_set;
+	CLUTTER_ACTOR_CLASS(class)->parent_set = on_parent_changed;
 
 	class->style_changed = on_style_changed;
 	class->background_changed = on_background_changed;
 
-	properties[PROP_STYLE] = g_param_spec_object("style", "style", "style", CMK_TYPE_STYLE, G_PARAM_READWRITE|G_PARAM_CONSTRUCT);
 	properties[PROP_BACKGROUND_COLOR_NAME] = g_param_spec_string("background-color-name", "background-color-name", "Named background color using CmkStyle", NULL, G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
 	
-	signals[SIGNAL_STYLE_CHANGED] = g_signal_new("style-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, style_changed), NULL, NULL, NULL, G_TYPE_NONE, 1, CMK_TYPE_STYLE);
+	signals[SIGNAL_STYLE_CHANGED] = g_signal_new("style-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, style_changed), NULL, NULL, NULL, G_TYPE_NONE, 0);
 
 	signals[SIGNAL_BACKGROUND_CHANGED] = g_signal_new("background-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, background_changed), NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
 static void cmk_widget_init(CmkWidget *self)
 {
+	CmkWidgetPrivate *private = PRIVATE(self);
+	private->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)clutter_color_free);
+	private->padding = -1;
+	private->bevelRadius = -1;
+	private->scaleFactor = -1;
+	set_actual_style_parent(self, styleDefault);
 }
 
 static void cmk_widget_dispose(GObject *self_)
 {
 	CmkWidgetPrivate *private = PRIVATE(CMK_WIDGET(self_));
-	
-	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self_));	
-	if(CMK_IS_WIDGET(parent))
-		g_signal_handlers_disconnect_by_func(parent, G_CALLBACK(on_parent_background_changed), self_);
-
-	if(private->actualStyle)
-		g_signal_handlers_disconnect_by_func(private->actualStyle, G_CALLBACK(emit_style_changed), self_);
-	if(private->actualStyleParent)
-		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(emit_style_changed), self_);
-	
-	if(private->styleParent)
-	{
-		g_signal_handlers_disconnect_by_func(private->styleParent, G_CALLBACK(on_style_parent_style_object_changed), self_);
-		g_signal_handlers_disconnect_by_func(private->styleParent, G_CALLBACK(on_style_parent_background_changed), self_);
-		g_signal_handlers_disconnect_by_func(private->styleParent, G_CALLBACK(on_style_parent_destroy), self_);
-		private->styleParent = NULL;
-	}
-
-	g_clear_object(&private->style);
-	g_clear_object(&private->actualStyle);
+	private->styleParent = NULL;
+	set_actual_style_parent(CMK_WIDGET(self_), NULL);
+	g_clear_pointer(&private->colors, g_hash_table_unref);
 	g_clear_pointer(&private->backgroundColorName, g_free);
 	private->disposed = TRUE;
 	G_OBJECT_CLASS(cmk_widget_parent_class)->dispose(self_);
@@ -118,11 +117,8 @@ static void cmk_widget_set_property(GObject *self_, guint propertyId, const GVal
 	
 	switch(propertyId)
 	{
-	case PROP_STYLE:
-		cmk_widget_set_style(self, g_value_get_object(value));
-		break;
 	case PROP_BACKGROUND_COLOR_NAME:
-		cmk_widget_set_background_color(self, g_value_get_string(value));
+		cmk_widget_set_background_color_name(self, g_value_get_string(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
@@ -137,11 +133,8 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 	
 	switch(propertyId)
 	{
-	case PROP_STYLE:
-		g_value_set_object(value, cmk_widget_get_actual_style(self));
-		break;
 	case PROP_BACKGROUND_COLOR_NAME:
-		g_value_set_string(value, cmk_widget_get_background_color(self));
+		g_value_set_string(value, cmk_widget_get_background_color_name(self));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
@@ -151,137 +144,137 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 
 static void emit_style_changed(CmkWidget *self)
 {
-	if(!PRIVATE(self)->disposed)
-	{
-		g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0, PRIVATE(self)->actualStyle);
-		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
-	}
-}
-
-static gboolean update_actual_style(CmkWidget *self)
-{
 	CmkWidgetPrivate *private = PRIVATE(self);
-	if(private->disposed)
-		return FALSE;	
-
-	// Disconnect last update's handlers
-	if(private->actualStyle)
-		g_signal_handlers_disconnect_by_func(private->actualStyle, G_CALLBACK(emit_style_changed), self);
-	if(private->actualStyleParent)
-		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(emit_style_changed), self);
-
-	CmkStyle *prevActualStyle = private->actualStyle; // Keep pointer for comparison
-	private->actualStyleParent = NULL;
-	g_clear_object(&private->actualStyle);
-	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
-
-	// If the style has been explicitly set, use that
-	if(private->style)
-	{
-		private->actualStyle = g_object_ref(private->style);
-	}
-	// Use the style parent's style if one exists
-	else if(private->styleParent)
-	{
-		private->actualStyle = cmk_widget_get_actual_style(private->styleParent);
-		if(private->actualStyle)
-		{
-			g_object_ref(private->actualStyle);
-			private->actualStyleParent = private->styleParent;
-		}
-	}
-	// Use the real parent's style if it is a widget
-	else if(CMK_IS_WIDGET(parent))
-	{
-		private->actualStyle = cmk_widget_get_actual_style(CMK_WIDGET(parent));
-		if(private->actualStyle)
-		{
-			g_object_ref(private->actualStyle);
-			private->actualStyleParent = CMK_WIDGET(parent);
-		}
-	}
-
-	// Otherwise, just use the default style
-	if(!private->actualStyle)
-		private->actualStyle = cmk_style_get_default();
-	
-	// Connect signal to watch for style changes
-	if(private->actualStyleParent)
-		g_signal_connect_swapped(private->actualStyleParent, "style-changed", G_CALLBACK(emit_style_changed), self);
-	else
-		g_signal_connect_swapped(private->actualStyle, "changed", G_CALLBACK(emit_style_changed), self);
-	
-	if(prevActualStyle != private->actualStyle)
-	{
-		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_STYLE]);
-		emit_style_changed(self);
-		return TRUE;
-	}
-	return FALSE;
-}
-
-static void on_parent_background_changed(CmkWidget *self, CmkWidget *parent)
-{
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	// Only say we've changed colors if we're not drawing our own background
-	// and there is no style parent to inherit background from
-	if(!PRIVATE(self)->backgroundColorName && !PRIVATE(self)->styleParent)
-		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
-}
-
-static void on_parent_set(ClutterActor *self_, ClutterActor *prevParent)
-{
-	g_return_if_fail(CMK_IS_WIDGET(self_));
-	if(PRIVATE(CMK_WIDGET(self_))->disposed)
+	if(private->emittingStyleChanged)
 		return;
-
-	update_actual_style(CMK_WIDGET(self_));
-
-	if(CMK_IS_WIDGET(prevParent))
-		g_signal_handlers_disconnect_by_func(prevParent, G_CALLBACK(on_parent_background_changed), self_);
-	
-	ClutterActor *newParent = clutter_actor_get_parent(self_);
-	if(CMK_IS_WIDGET(newParent))
-		g_signal_connect_swapped(newParent, "background-changed", G_CALLBACK(on_parent_background_changed), self_);
-	g_signal_emit(self_, signals[SIGNAL_BACKGROUND_CHANGED], 0);
+	// Set to FALSE in on_style_changed, the top-level object signal handler for the style changed signal
+	// This helps with signal recursion when settings styles in the on_style_changed callback (which is called both when the parent style changes or when the current style changes). The style set handlers check for this anyway, but this removes a little extra work.
+	private->emittingStyleChanged = TRUE;
+	g_signal_emit(self, signals[SIGNAL_STYLE_CHANGED], 0);
 }
 
-static void on_style_changed(CmkWidget *self, CmkStyle *style)
-{
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	g_return_if_fail(CMK_IS_STYLE(style));
-	update_named_background_color(self);
-}
-
-void cmk_widget_set_style(CmkWidget *self, CmkStyle *style)
-{
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	g_return_if_fail(style == NULL || CMK_IS_STYLE(style));
-	if(style)
-		g_object_ref(style);
-	g_clear_object(&(PRIVATE(self)->style));
-	PRIVATE(self)->style = style;
-	update_actual_style(self);
-}
-
-CmkStyle * cmk_widget_get_actual_style(CmkWidget *self)
+const ClutterColor * cmk_widget_style_get_color(CmkWidget *self, const gchar *name)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
-	return PRIVATE(self)->actualStyle;
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(G_UNLIKELY(!name || private->disposed))
+		return NULL;
+	const ClutterColor *ret = NULL;
+	if(g_hash_table_size(private->colors) > 0)
+		ret = g_hash_table_lookup(private->colors, name);
+	if(ret)
+		return ret;
+	if(private->actualStyleParent)
+		return cmk_widget_style_get_color(private->actualStyleParent, name);
+	return NULL;
 }
 
-CmkStyle * cmk_widget_get_style(CmkWidget *self)
+void cmk_widget_style_set_color(CmkWidget *self, const gchar *name, const ClutterColor *color)
 {
-	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
-	return PRIVATE(self)->style;
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	ClutterColor *c = clutter_color_copy(color);
+	g_hash_table_insert(PRIVATE(self)->colors, g_strdup(name), c);
+	emit_style_changed(self);
+	g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 }
 
-static void on_style_parent_style_object_changed(CmkWidget *self, GParamSpec *spec, CmkWidget *parent)
+void cmk_widget_style_set_bevel_radius(CmkWidget *self, float radius)
 {
-	update_actual_style(self);
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	gboolean diff = (radius != PRIVATE(self)->bevelRadius);
+	PRIVATE(self)->bevelRadius = radius;
+	if(diff)
+		emit_style_changed(self);
 }
 
-static void on_style_parent_background_changed(CmkWidget *self, CmkWidget *parent)
+float cmk_widget_style_get_bevel_radius(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(G_UNLIKELY(private->disposed))
+		return 0;
+	if(private->bevelRadius >= 0)
+		return private->bevelRadius;
+	if(private->actualStyleParent)
+		return cmk_widget_style_get_bevel_radius(private->actualStyleParent);
+	return 0;
+}
+
+void cmk_widget_style_set_padding(CmkWidget *self, float padding)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	gboolean diff = (padding != PRIVATE(self)->padding);
+	PRIVATE(self)->padding = padding;
+	if(diff)
+		emit_style_changed(self);
+}
+
+float cmk_widget_style_get_padding(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(G_UNLIKELY(private->disposed))
+		return 0;
+	if(private->padding >= 0)
+		return private->padding;
+	if(private->actualStyleParent)
+		return cmk_widget_style_get_padding(private->actualStyleParent);
+	return 0;
+}
+
+void cmk_widget_style_set_scale_factor(CmkWidget *self, float scale)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	gboolean diff = (scale != PRIVATE(self)->scaleFactor);
+	PRIVATE(self)->scaleFactor = scale;
+	if(diff)
+		emit_style_changed(self);
+}
+
+float cmk_widget_style_get_scale_factor(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(G_UNLIKELY(private->disposed))
+		return 1;
+	if(private->scaleFactor >= 0)
+		return private->scaleFactor;
+	if(private->actualStyleParent)
+		return cmk_widget_style_get_scale_factor(private->actualStyleParent);
+	return 1;
+}
+
+const ClutterColor * cmk_widget_get_foreground_color(CmkWidget *self)
+{
+	const ClutterColor *black = clutter_color_get_static(CLUTTER_COLOR_BLACK);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), black);
+	if(G_UNLIKELY(PRIVATE(self)->disposed))
+		return black;
+
+	const gchar *bgColor = cmk_widget_get_background_color_name(self);
+	const ClutterColor *color = NULL;
+	if(bgColor)
+	{
+		gchar *name = g_strdup_printf("%s-foreground", bgColor);
+		color = cmk_widget_style_get_color(self, name);
+		g_free(name);
+		if(color)
+			return color;
+	}
+	color = cmk_widget_style_get_color(self, "foreground");
+	if(color)
+		return color;
+	return black;
+} 
+
+static void on_style_parent_style_changed(CmkWidget *self)
+{
+	// Relay signal
+	emit_style_changed(self);
+	g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
+}
+
+static void on_style_parent_background_changed(CmkWidget *self)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
 	// Only say we've changed colors if we're not drawing our own background
@@ -289,42 +282,69 @@ static void on_style_parent_background_changed(CmkWidget *self, CmkWidget *paren
 		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 }
 
-static void on_style_parent_destroy(CmkWidget *self, CmkWidget *parent)
+static void on_style_parent_destroy(CmkWidget *self, CmkWidget *styleParent)
 {
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	if(CMK_IS_WIDGET(parent))
+	if(PRIVATE(self)->styleParent == styleParent)
+		PRIVATE(self)->styleParent = NULL;
+	update_actual_style_parent(self);
+}
+
+static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self_));
+	update_actual_style_parent(CMK_WIDGET(self_));
+}
+
+static void set_actual_style_parent(CmkWidget *self, CmkWidget *parent)
+{
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(private->actualStyleParent == parent)
+		return;
+	
+	if(private->actualStyleParent)
 	{
-		g_signal_handlers_disconnect_by_func(parent, G_CALLBACK(on_style_parent_style_object_changed), self);
-		g_signal_handlers_disconnect_by_func(parent, G_CALLBACK(on_style_parent_destroy), self);
+		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_style_changed), self);
+		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_background_changed), self);
+		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_destroy), self);
 	}
-	PRIVATE(self)->styleParent = NULL;
-	on_style_parent_style_object_changed(self, NULL, parent);
+	
+	private->actualStyleParent = parent;
+	if(parent)
+	{
+		g_signal_connect_swapped(private->actualStyleParent, "style-changed", G_CALLBACK(on_style_parent_style_changed), self);
+		g_signal_connect_swapped(private->actualStyleParent, "background-changed", G_CALLBACK(on_style_parent_background_changed), self);
+		g_signal_connect_swapped(private->actualStyleParent, "destroy", G_CALLBACK(on_style_parent_destroy), self);
+	}
+
+	emit_style_changed(self);
+	g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
+}
+
+static void update_actual_style_parent(CmkWidget *self)
+{
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(private->disposed)
+		return;	
+	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
+	
+	if(private->styleParent)
+		set_actual_style_parent(self, private->styleParent);	
+	else if(CMK_IS_WIDGET(parent))
+		set_actual_style_parent(self, CMK_WIDGET(parent));
+	else if(styleDefault)
+		set_actual_style_parent(self, styleDefault);
+	else
+		set_actual_style_parent(self, NULL);
 }
 
 void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
-	g_return_if_fail(CMK_IS_WIDGET(self) || parent == NULL);
+	g_return_if_fail(parent == NULL || CMK_IS_WIDGET(parent));
 	if(PRIVATE(self)->styleParent == parent)
 		return;
-
-	if(PRIVATE(self)->styleParent)
-	{
-		g_signal_handlers_disconnect_by_func(PRIVATE(self)->styleParent, G_CALLBACK(on_style_parent_style_object_changed), self);
-		g_signal_handlers_disconnect_by_func(PRIVATE(self)->styleParent, G_CALLBACK(on_style_parent_background_changed), self);
-		g_signal_handlers_disconnect_by_func(PRIVATE(self)->styleParent, G_CALLBACK(on_style_parent_destroy), self);
-	}
-
 	PRIVATE(self)->styleParent = parent;
-	if(!update_actual_style(self))
-		g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
-
-	if(parent)
-	{
-		g_signal_connect_swapped(parent, "notify::style", G_CALLBACK(on_style_parent_style_object_changed), self);
-		g_signal_connect_swapped(parent, "background-changed", G_CALLBACK(on_style_parent_background_changed), self);
-		g_signal_connect_swapped(parent, "destroy", G_CALLBACK(on_style_parent_destroy), self);
-	}
+	update_actual_style_parent(self);
 }
 
 CmkWidget * cmk_widget_get_style_parent(CmkWidget *self)
@@ -333,7 +353,20 @@ CmkWidget * cmk_widget_get_style_parent(CmkWidget *self)
 	return PRIVATE(self)->styleParent;
 }
 
-void cmk_widget_set_background_color(CmkWidget *self, const gchar *namedColor)
+static void on_style_changed(CmkWidget *self)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	update_named_background_color(self);
+	PRIVATE(self)->emittingStyleChanged = FALSE; // see emit_style_changed
+}
+
+static void on_background_changed(CmkWidget *self)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	update_named_background_color(self);
+}
+
+void cmk_widget_set_background_color_name(CmkWidget *self, const gchar *namedColor)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
 	if(g_strcmp0(PRIVATE(self)->backgroundColorName, namedColor) == 0)
@@ -358,38 +391,41 @@ void cmk_widget_set_draw_background_color(CmkWidget *self, gboolean draw)
 	update_named_background_color(self);
 }
 
-const gchar * cmk_widget_get_background_color(CmkWidget *self)
+const gchar * cmk_widget_get_background_color_name(CmkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
 	CmkWidgetPrivate *private = PRIVATE(self);
-	
+	if(G_UNLIKELY(private->disposed))
+		return NULL;
 	if(private->backgroundColorName)
 		return private->backgroundColorName;
-
-	if(private->styleParent)
-		return cmk_widget_get_background_color(private->styleParent);
-
-	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
-	if(CMK_IS_WIDGET(parent))
-		return cmk_widget_get_background_color(CMK_WIDGET(parent));
-
+	if(private->actualStyleParent)
+		return cmk_widget_get_background_color_name(private->actualStyleParent);
 	return NULL;
 }
 
-static void on_background_changed(CmkWidget *self)
+const ClutterColor * cmk_widget_get_background_color(CmkWidget *self)
 {
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	update_named_background_color(self);
+	const gchar *name = cmk_widget_get_background_color_name(self);
+	if(name)
+	{
+		const ClutterColor *color = cmk_widget_style_get_color(self, name);
+		if(color)
+			return color;
+	}
+	return clutter_color_get_static(CLUTTER_COLOR_WHITE);
 }
 
 static void update_named_background_color(CmkWidget *self)
 {
+	const ClutterColor *color = NULL;
 	if(PRIVATE(self)->drawBackground && PRIVATE(self)->backgroundColorName)
-	{
-		const CmkColor *color = cmk_style_get_color(PRIVATE(self)->actualStyle, PRIVATE(self)->backgroundColorName);
-		ClutterColor cc = cmk_to_clutter_color(color);
-		clutter_actor_set_background_color(CLUTTER_ACTOR(self), &cc);
-	}
-	else
-		clutter_actor_set_background_color(CLUTTER_ACTOR(self), NULL);
+		color = cmk_widget_get_background_color(self);
+	clutter_actor_set_background_color(CLUTTER_ACTOR(self), color);
+}
+
+void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color)
+{
+	if(!color) return; // Don't produce warnings because this happens naturally sometimes during object destruction
+	cairo_set_source_rgba(cr, color->red/255.0, color->green/255.0, color->blue/255.0, color->alpha/255.0);
 }
