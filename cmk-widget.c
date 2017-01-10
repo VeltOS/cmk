@@ -40,9 +40,11 @@ enum
 static GParamSpec *properties[PROP_LAST];
 static guint signals[SIGNAL_LAST];
 
+static void cmk_widget_constructed(GObject *self_);
 static void cmk_widget_dispose(GObject *self_);
 static void cmk_widget_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
+static void emit_style_changed(CmkWidget *self);
 static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent);
 static void set_actual_style_parent(CmkWidget *self, CmkWidget *parent);
 static void update_actual_style_parent(CmkWidget *self);
@@ -71,6 +73,7 @@ CmkWidget * cmk_widget_get_style_default(void)
 static void cmk_widget_class_init(CmkWidgetClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->constructed = cmk_widget_constructed;
 	base->dispose = cmk_widget_dispose;
 	base->get_property = cmk_widget_get_property;
 	base->set_property = cmk_widget_set_property;
@@ -96,7 +99,14 @@ static void cmk_widget_init(CmkWidget *self)
 	private->padding = -1;
 	private->bevelRadius = -1;
 	private->scaleFactor = -1;
+	private->emittingStyleChanged = TRUE;
 	set_actual_style_parent(self, styleDefault);
+	private->emittingStyleChanged = FALSE;
+}
+
+static void cmk_widget_constructed(GObject *self_)
+{
+	emit_style_changed(CMK_WIDGET(self_));
 }
 
 static void cmk_widget_dispose(GObject *self_)
@@ -300,7 +310,6 @@ static void set_actual_style_parent(CmkWidget *self, CmkWidget *parent)
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if(private->actualStyleParent == parent)
 		return;
-	
 	if(private->actualStyleParent)
 	{
 		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_style_changed), self);
@@ -350,7 +359,7 @@ void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
 CmkWidget * cmk_widget_get_style_parent(CmkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
-	return PRIVATE(self)->styleParent;
+	return PRIVATE(self)->actualStyleParent;
 }
 
 static void on_style_changed(CmkWidget *self)

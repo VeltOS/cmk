@@ -22,7 +22,8 @@ struct _CmkWidgetClass
 	
 	/*
 	 * Emitted when a style property changes on the widget. This may include
-	 * changes to the style of parent widgets. Must chain up to parent class.
+	 * changes to the style of parent widgets. Always emitted during object
+	 * construction (after init completes). Must chain up to parent class.
 	 */
 	void (*style_changed) (CmkWidget *self);
 
@@ -61,7 +62,11 @@ CmkWidget * cmk_widget_get_style_default();
 void cmk_widget_set_style_parent(CmkWidget *widget, CmkWidget *parent);
 
 /*
- * Gets the style parent set with cmk_widget_set_style_parent.
+ * Gets the current style parent. If cmk_widget_set_style_parent has been
+ * called, this returns that value. Otherwise, this returns the widget's
+ * current actual parent if it is a CmkWidget, or the default styling
+ * CmkWidget otherwise. (If called on the default style CmkWidget, returns
+ * NULL).
  */
 CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
 
