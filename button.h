@@ -39,6 +39,9 @@ CmkWidget * cmk_button_get_content(CmkButton *button);
 void cmk_button_set_beveled(CmkButton *button, gboolean beveled);
 gboolean cmk_button_get_beveled(CmkButton *button);
 
+void cmk_button_set_selected(CmkButton *button, gboolean selected);
+gboolean cmk_button_get_selected(CmkButton *button);
+
 /*
  * Returns the button actor's name (clutter_actor_set_name) if it is set,
  * or the button's text otherwise.

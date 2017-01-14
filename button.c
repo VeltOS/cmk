@@ -13,6 +13,7 @@ struct _CmkButtonPrivate
 	CmkWidget *content;
 	ClutterText *text; // Owned by Clutter. Do not free.
 	gboolean hover;
+	gboolean selected;
 	gboolean beveled;
 };
 
@@ -310,9 +311,10 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	cairo_paint(cr);
 	cairo_restore(cr);
 
-	if(PRIVATE(self)->hover)
+	if(PRIVATE(self)->hover || PRIVATE(self)->selected)
 	{
-		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), "hover"));
+		const gchar *color = PRIVATE(self)->hover ? "hover" : "selected";
+		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), color));
 		if(PRIVATE(self)->beveled)
 		{
 			cairo_new_sub_path(cr);
@@ -392,6 +394,22 @@ gboolean cmk_button_get_beveled(CmkButton *self)
 {
 	g_return_val_if_fail(CMK_IS_BUTTON(self), FALSE);
 	return PRIVATE(self)->beveled;
+}
+
+void cmk_button_set_selected(CmkButton *self, gboolean selected)
+{
+	g_return_if_fail(CMK_IS_BUTTON(self));
+	if(PRIVATE(self)->selected != selected)
+	{
+		PRIVATE(self)->selected = selected;
+		clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
+	}
+}
+
+gboolean cmk_button_get_selected(CmkButton *self)
+{
+	g_return_val_if_fail(CMK_IS_BUTTON(self), FALSE);
+	return PRIVATE(self)->selected;
 }
 
 const gchar * cmk_button_get_name(CmkButton *self)
