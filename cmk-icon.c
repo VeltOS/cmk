@@ -46,6 +46,16 @@ CmkIcon * cmk_icon_new_from_name(const gchar *iconName)
 	return CMK_ICON(g_object_new(CMK_TYPE_ICON, "icon-name", iconName, NULL));
 }
 
+CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size)
+{
+	CmkIcon *icon = CMK_ICON(g_object_new(CMK_TYPE_ICON,
+		"icon-name", iconName,
+		"icon-theme", themeName,
+		NULL));
+	cmk_icon_set_size(icon, size);
+	return icon;
+}
+
 static void cmk_icon_class_init(CmkIconClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);

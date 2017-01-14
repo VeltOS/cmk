@@ -23,6 +23,7 @@ struct _CmkIconClass
 
 CmkIcon * cmk_icon_new(void);
 CmkIcon * cmk_icon_new_from_name(const gchar *iconName);
+CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size);
 
 void cmk_icon_set_icon(CmkIcon *icon, const gchar *iconName);
 const gchar * cmk_icon_get_icon(CmkIcon *icon);
