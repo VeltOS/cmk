@@ -100,6 +100,7 @@ static void on_background_changed(CmkWidget *self_)
 {
 	const ClutterColor *color = cmk_widget_get_foreground_color(self_);
 	clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
+	CMK_WIDGET_CLASS(cmk_label_parent_class)->background_changed(self_);
 }
 
 void cmk_label_set_text(CmkLabel *self, const gchar *text)

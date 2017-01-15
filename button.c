@@ -292,6 +292,7 @@ static void on_background_changed(CmkWidget *self_)
 		const ClutterColor *color = cmk_widget_get_foreground_color(self_);
 		clutter_text_set_color(PRIVATE(CMK_BUTTON(self_))->text, color);
 	}
+	CMK_WIDGET_CLASS(cmk_button_parent_class)->background_changed(self_);
 }
 
 static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas)
