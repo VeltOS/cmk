@@ -12,6 +12,7 @@ struct _CmkIconPrivate
 {
 	gchar *iconName;
 	gchar *themeName;
+	gboolean useForegroundColor;
 	CmkIconLoader *loader;
 	cairo_surface_t *iconSurface;
 };
@@ -20,6 +21,7 @@ enum
 {
 	PROP_ICON_NAME = 1,
 	PROP_ICON_THEME,
+	PROP_USE_FOREGROUND_COLOR,
 	PROP_LAST
 };
 
@@ -46,11 +48,12 @@ CmkIcon * cmk_icon_new_from_name(const gchar *iconName)
 	return CMK_ICON(g_object_new(CMK_TYPE_ICON, "icon-name", iconName, NULL));
 }
 
-CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size)
+CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size, gboolean useForeground)
 {
 	CmkIcon *icon = CMK_ICON(g_object_new(CMK_TYPE_ICON,
 		"icon-name", iconName,
 		"icon-theme", themeName,
+		"use-foreground-color", useForeground,
 		NULL));
 	cmk_icon_set_size(icon, size);
 	return icon;
@@ -67,6 +70,7 @@ static void cmk_icon_class_init(CmkIconClass *class)
 
 	properties[PROP_ICON_NAME] = g_param_spec_string("icon-name", "icon-name", "Icon name", NULL, G_PARAM_READWRITE);
 	properties[PROP_ICON_THEME] = g_param_spec_string("icon-theme", "icon-theme", "Icon theme name", NULL, G_PARAM_READWRITE);
+	properties[PROP_USE_FOREGROUND_COLOR] = g_param_spec_boolean("use-foreground-color", "use foreground color", "use foreground color to color the icon", FALSE, G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
 }
@@ -108,6 +112,9 @@ static void cmk_icon_set_property(GObject *self_, guint propertyId, const GValue
 	case PROP_ICON_THEME:
 		cmk_icon_set_icon_theme(self, g_value_get_string(value));
 		break;
+	case PROP_USE_FOREGROUND_COLOR:
+		cmk_icon_set_use_foreground_color(self, g_value_get_boolean(value));
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
 		break;
@@ -127,6 +134,9 @@ static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *valu
 	case PROP_ICON_THEME:
 		g_value_set_string(value, cmk_icon_get_icon_theme(self));
 		break;
+	case PROP_USE_FOREGROUND_COLOR:
+		g_value_set_boolean(value, cmk_icon_get_use_foreground_color(self));
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
 		break;
@@ -135,6 +145,9 @@ static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *valu
 
 static void on_background_changed(CmkWidget *self_)
 {
+	ClutterCanvas *canvas = CLUTTER_CANVAS(clutter_actor_get_content(CLUTTER_ACTOR(self_)));
+	clutter_content_invalidate(CLUTTER_CONTENT(canvas));
+	CMK_WIDGET_CLASS(cmk_icon_parent_class)->background_changed(self_);
 }
 
 static void on_default_icon_theme_changed(CmkIcon *self)
@@ -154,8 +167,16 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	{
 		gdouble factor = (gdouble)height / cairo_image_surface_get_height(PRIVATE(self)->iconSurface);
 		cairo_scale(cr, factor, factor);
-		cairo_set_source_surface(cr, PRIVATE(self)->iconSurface, 0, 0);
-		cairo_paint(cr);
+		if(PRIVATE(self)->useForegroundColor)
+		{
+			cairo_set_source_clutter_color(cr, cmk_widget_get_foreground_color(CMK_WIDGET(self)));
+			cairo_mask_surface(cr, PRIVATE(self)->iconSurface, 0, 0);
+		}
+		else
+		{
+			cairo_set_source_surface(cr, PRIVATE(self)->iconSurface, 0, 0);
+			cairo_paint(cr);
+		}
 	}
 	return TRUE;
 }
@@ -213,6 +234,23 @@ gfloat cmk_icon_get_size(CmkIcon *self)
 	gfloat size = MIN(width, height);
 	guint scale = cmk_icon_loader_get_scale(PRIVATE(self)->loader);
 	return size / scale;
+}
+
+void cmk_icon_set_use_foreground_color(CmkIcon *self, gboolean useForeground)
+{
+	g_return_if_fail(CMK_IS_ICON(self));
+	if(PRIVATE(self)->useForegroundColor != useForeground)
+	{
+		PRIVATE(self)->useForegroundColor = useForeground;
+		ClutterCanvas *canvas = CLUTTER_CANVAS(clutter_actor_get_content(CLUTTER_ACTOR(self)));
+		clutter_content_invalidate(CLUTTER_CONTENT(canvas));
+	}
+}
+
+gboolean cmk_icon_get_use_foreground_color(CmkIcon *self)
+{
+	g_return_val_if_fail(CMK_IS_ICON(self), FALSE);
+	return PRIVATE(self)->useForegroundColor;
 }
 
 void cmk_icon_set_icon_theme(CmkIcon *self, const gchar *themeName)

@@ -23,7 +23,7 @@ struct _CmkIconClass
 
 CmkIcon * cmk_icon_new(void);
 CmkIcon * cmk_icon_new_from_name(const gchar *iconName);
-CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size);
+CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size, gboolean useForeground);
 
 void cmk_icon_set_icon(CmkIcon *icon, const gchar *iconName);
 const gchar * cmk_icon_get_icon(CmkIcon *icon);
@@ -37,6 +37,15 @@ const gchar * cmk_icon_get_icon(CmkIcon *icon);
  */
 void cmk_icon_set_size(CmkIcon *icon, gfloat size);
 gfloat cmk_icon_get_size(CmkIcon *icon);
+
+/*
+ * If the icon is set to use the foreground color, it will mask the entire
+ * icon with the current foreground (font) color. This is useful for icons
+ * which are solid-colored and should match the current theme, but should
+ * not be used on, for example, application icons.
+ */
+void cmk_icon_set_use_foreground_color(CmkIcon *icon, gboolean useForeground);
+gboolean cmk_icon_get_use_foreground_color(CmkIcon *icon);
 
 /*
  * Sets the icon theme to use by name. If set to NULL (default),
