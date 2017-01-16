@@ -281,6 +281,7 @@ static void on_style_changed(CmkWidget *self_)
 	//float padding = cmk_style_get_padding(style);
 	//ClutterMargin margin = {padding, padding, padding, padding};
 	//clutter_actor_set_margin(CLUTTER_ACTOR(PRIVATE(CMK_BUTTON(self_))->text), &margin);
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self_));
 	
 	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_);
 }

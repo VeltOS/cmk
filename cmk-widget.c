@@ -191,6 +191,7 @@ void cmk_widget_style_set_color(CmkWidget *self, const gchar *name, const Clutte
 void cmk_widget_style_set_bevel_radius(CmkWidget *self, float radius)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
+	radius = MAX(radius, 0.0f);
 	gboolean diff = (radius != PRIVATE(self)->bevelRadius);
 	PRIVATE(self)->bevelRadius = radius;
 	if(diff)
@@ -204,7 +205,7 @@ float cmk_widget_style_get_bevel_radius(CmkWidget *self)
 	if(G_UNLIKELY(private->disposed))
 		return 0;
 	if(private->bevelRadius >= 0)
-		return private->bevelRadius;
+		return private->bevelRadius; // TODO: Scale factor
 	if(private->actualStyleParent)
 		return cmk_widget_style_get_bevel_radius(private->actualStyleParent);
 	return 0;
@@ -213,28 +214,35 @@ float cmk_widget_style_get_bevel_radius(CmkWidget *self)
 void cmk_widget_style_set_padding(CmkWidget *self, float padding)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
+	padding = MAX(padding, 0.0f);
 	gboolean diff = (padding != PRIVATE(self)->padding);
 	PRIVATE(self)->padding = padding;
 	if(diff)
 		emit_style_changed(self);
 }
 
-float cmk_widget_style_get_padding(CmkWidget *self)
+static float _cmk_widget_style_get_padding_internal(CmkWidget *self, CmkWidget *origin)
 {
-	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if(G_UNLIKELY(private->disposed))
 		return 0;
 	if(private->padding >= 0)
-		return private->padding;
+		return private->padding * cmk_widget_style_get_scale_factor(origin);
 	if(private->actualStyleParent)
-		return cmk_widget_style_get_padding(private->actualStyleParent);
+		return _cmk_widget_style_get_padding_internal(private->actualStyleParent, origin);
 	return 0;
+}
+
+float cmk_widget_style_get_padding(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
+	return _cmk_widget_style_get_padding_internal(self, self);
 }
 
 void cmk_widget_style_set_scale_factor(CmkWidget *self, float scale)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
+	scale = MIN(MAX(scale, 0.1f), 10.0f);
 	gboolean diff = (scale != PRIVATE(self)->scaleFactor);
 	PRIVATE(self)->scaleFactor = scale;
 	if(diff)

@@ -15,12 +15,17 @@ struct _CmkIconPrivate
 	gboolean useForegroundColor;
 	CmkIconLoader *loader;
 	cairo_surface_t *iconSurface;
+
+	// A size "request" for the actor. Can be scaled by the style scale
+	// factor. If this is <=0, the actor's standard allocated size is used.
+	gfloat size;
 };
 
 enum
 {
 	PROP_ICON_NAME = 1,
 	PROP_ICON_THEME,
+	PROP_ICON_SIZE,
 	PROP_USE_FOREGROUND_COLOR,
 	PROP_LAST
 };
@@ -30,6 +35,7 @@ static GParamSpec *properties[PROP_LAST];
 static void cmk_icon_dispose(GObject *self_);
 static void cmk_icon_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
+static void on_style_changed(CmkWidget *self_);
 static void on_background_changed(CmkWidget *self_);
 static void on_default_icon_theme_changed(CmkIcon *self);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkIcon *self);
@@ -50,13 +56,12 @@ CmkIcon * cmk_icon_new_from_name(const gchar *iconName)
 
 CmkIcon * cmk_icon_new_full(const gchar *iconName, const gchar *themeName, gfloat size, gboolean useForeground)
 {
-	CmkIcon *icon = CMK_ICON(g_object_new(CMK_TYPE_ICON,
+	return CMK_ICON(g_object_new(CMK_TYPE_ICON,
 		"icon-name", iconName,
 		"icon-theme", themeName,
+		"icon-size", size,
 		"use-foreground-color", useForeground,
 		NULL));
-	cmk_icon_set_size(icon, size);
-	return icon;
 }
 
 static void cmk_icon_class_init(CmkIconClass *class)
@@ -66,10 +71,12 @@ static void cmk_icon_class_init(CmkIconClass *class)
 	base->get_property = cmk_icon_get_property;
 	base->set_property = cmk_icon_set_property;
 	
+	CMK_WIDGET_CLASS(class)->style_changed = on_style_changed;
 	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
 
 	properties[PROP_ICON_NAME] = g_param_spec_string("icon-name", "icon-name", "Icon name", NULL, G_PARAM_READWRITE);
 	properties[PROP_ICON_THEME] = g_param_spec_string("icon-theme", "icon-theme", "Icon theme name", NULL, G_PARAM_READWRITE);
+	properties[PROP_ICON_SIZE] = g_param_spec_float("icon-size", "icon-size", "Icon size reqest", 0, 1024, 0, G_PARAM_READWRITE);
 	properties[PROP_USE_FOREGROUND_COLOR] = g_param_spec_boolean("use-foreground-color", "use foreground color", "use foreground color to color the icon", FALSE, G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
@@ -112,6 +119,9 @@ static void cmk_icon_set_property(GObject *self_, guint propertyId, const GValue
 	case PROP_ICON_THEME:
 		cmk_icon_set_icon_theme(self, g_value_get_string(value));
 		break;
+	case PROP_ICON_SIZE:
+		cmk_icon_set_size(self, g_value_get_float(value));
+		break;
 	case PROP_USE_FOREGROUND_COLOR:
 		cmk_icon_set_use_foreground_color(self, g_value_get_boolean(value));
 		break;
@@ -134,6 +144,9 @@ static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *valu
 	case PROP_ICON_THEME:
 		g_value_set_string(value, cmk_icon_get_icon_theme(self));
 		break;
+	case PROP_ICON_SIZE:
+		g_value_set_float(value, cmk_icon_get_size(self));
+		break;
 	case PROP_USE_FOREGROUND_COLOR:
 		g_value_set_boolean(value, cmk_icon_get_use_foreground_color(self));
 		break;
@@ -141,6 +154,16 @@ static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *valu
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
 		break;
 	}
+}
+
+static void on_style_changed(CmkWidget *self_)
+{
+	if(PRIVATE(CMK_ICON(self_))->size > 0)
+	{
+		gfloat size = PRIVATE(CMK_ICON(self_))->size * cmk_widget_style_get_scale_factor(self_);
+		clutter_actor_set_size(CLUTTER_ACTOR(self_), size, size);
+	}
+	CMK_WIDGET_CLASS(cmk_icon_parent_class)->style_changed(self_);
 }
 
 static void on_background_changed(CmkWidget *self_)
@@ -188,11 +211,16 @@ static void update_canvas(ClutterActor *self_)
 	CmkIconPrivate *private = PRIVATE(CMK_ICON(self_));
 	g_clear_pointer(&private->iconSurface, cairo_surface_destroy);
 
+	guint scale = cmk_icon_loader_get_scale(private->loader);
 	gfloat width, height;
 	clutter_actor_get_size(CLUTTER_ACTOR(self_), &width, &height);
 	gfloat size = MIN(width, height);
-	guint scale = cmk_icon_loader_get_scale(private->loader);
-	gfloat unscaledSize = size / scale;
+
+	gfloat unscaledSize = 0;
+//	if(private->size > 0)
+//		unscaledSize = private->size;
+//	else
+		unscaledSize = size / scale;
 
 	if(private->iconName)
 	{
@@ -221,19 +249,21 @@ const gchar * cmk_icon_get_icon(CmkIcon *self)
 void cmk_icon_set_size(CmkIcon *self, gfloat size)
 {
 	g_return_if_fail(CMK_IS_ICON(self));
-	guint scale = cmk_icon_loader_get_scale(PRIVATE(self)->loader);
-	size *= scale;
-	clutter_actor_set_size(CLUTTER_ACTOR(self), size, size);
+	if(PRIVATE(self)->size != size)
+	{
+		if(size <= 0)
+			size = 0;
+		PRIVATE(self)->size = size;
+		gfloat scale = cmk_widget_style_get_scale_factor(CMK_WIDGET(self));
+		gfloat final = (size <= 0) ? -1 : scale * size;
+		clutter_actor_set_size(CLUTTER_ACTOR(self), final, final);
+	}
 }
 
 gfloat cmk_icon_get_size(CmkIcon *self)
 {
 	g_return_val_if_fail(CMK_IS_ICON(self), 0);
-	gfloat width, height;
-	clutter_actor_get_size(CLUTTER_ACTOR(self), &width, &height);
-	gfloat size = MIN(width, height);
-	guint scale = cmk_icon_loader_get_scale(PRIVATE(self)->loader);
-	return size / scale;
+	return PRIVATE(self)->size;
 }
 
 void cmk_icon_set_use_foreground_color(CmkIcon *self, gboolean useForeground)
