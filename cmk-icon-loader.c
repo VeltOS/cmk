@@ -97,7 +97,7 @@ static void cmk_icon_loader_class_init(CmkIconLoaderClass *class)
 	base->set_property = cmk_icon_loader_set_property;
 	base->get_property = cmk_icon_loader_get_property;
 
-	properties[PROP_SCALE] = g_param_spec_int("scale", "scale", "Global GUI scale", 0, 10, 1, G_PARAM_READWRITE);
+	properties[PROP_SCALE] = g_param_spec_int("scale", "scale", "Global GUI scale", 0, 10, 0, G_PARAM_READWRITE);
 	properties[PROP_DEFAULT_THEME] = g_param_spec_string("default-theme", "default-theme", "Global default icon theme", NULL, G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
@@ -105,7 +105,7 @@ static void cmk_icon_loader_class_init(CmkIconLoaderClass *class)
 
 static void cmk_icon_loader_init(CmkIconLoader *self)
 {
-	self->setScale = 1;
+	self->setScale = 0;
 	self->themes = g_tree_new_full((GCompareDataFunc)g_strcmp0, NULL, g_free, (GDestroyNotify)free_icon_theme);
 	self->settings = g_settings_new("org.gnome.desktop.interface");
 	g_signal_connect_swapped(self->settings, "changed::scaling-factor", G_CALLBACK(on_scale_changed), self);
@@ -161,7 +161,7 @@ static void cmk_icon_loader_get_property(GObject *self_, guint propertyId, GValu
 
 static void on_scale_changed(CmkIconLoader *self)
 {
-	if(self->setScale != 0)
+	if(self->setScale == 0)
 		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_SCALE]);
 }
 
@@ -186,7 +186,8 @@ guint cmk_icon_loader_get_scale(CmkIconLoader *self)
 	g_return_val_if_fail(CMK_ICON_LOADER(self), 0);
 	if(self->setScale != 0)
 		return self->setScale;
-	return g_settings_get_uint(self->settings, "scaling-factor");
+	guint scale = g_settings_get_uint(self->settings, "scaling-factor");
+	return MAX(scale, 1);
 }
 
 void cmk_icon_loader_set_default_theme(CmkIconLoader *self, const gchar *theme)
