@@ -28,6 +28,7 @@ CmkLabel * cmk_label_new_with_text(const gchar *text);
 
 void cmk_label_set_text(CmkLabel *label, const gchar *text);
 const gchar * cmk_label_get_text(CmkLabel *label);
+void cmk_label_set_markup(CmkLabel *label, const gchar *markup);
 
 G_END_DECLS
 

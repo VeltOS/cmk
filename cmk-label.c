@@ -112,3 +112,8 @@ const gchar * cmk_label_get_text(CmkLabel *self)
 {
 	return clutter_text_get_text(PRIVATE(self)->text);
 }
+
+void cmk_label_set_markup(CmkLabel *self, const gchar *markup)
+{
+	clutter_text_set_markup(PRIVATE(self)->text, markup);
+}
