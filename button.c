@@ -14,13 +14,13 @@ struct _CmkButtonPrivate
 	ClutterText *text; // Owned by Clutter. Do not free.
 	gboolean hover;
 	gboolean selected;
-	gboolean beveled;
+	CmkButtonType type;
 };
 
 enum
 {
 	PROP_TEXT = 1,
-	PROP_BEVELED,
+	PROP_TYPE,
 	PROP_LAST
 };
 
@@ -60,14 +60,9 @@ CmkButton * cmk_button_new_with_text(const gchar *text)
 	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, NULL));
 }
 
-CmkButton * cmk_beveled_button_new(void)
+CmkButton * cmk_button_new_full(const gchar *text, CmkButtonType type)
 {
-	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "beveled", TRUE, NULL));
-}
-
-CmkButton * cmk_beveled_button_new_with_text(const gchar *text)
-{
-	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, "beveled", TRUE, NULL));
+	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, "type", type, NULL));
 }
 
 static void cmk_button_class_init(CmkButtonClass *class)
@@ -87,7 +82,7 @@ static void cmk_button_class_init(CmkButtonClass *class)
 	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
 	
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", "", G_PARAM_READWRITE);
-	properties[PROP_BEVELED] = g_param_spec_boolean("beveled", "beveled", "beveled", FALSE, G_PARAM_READWRITE);
+	properties[PROP_TYPE] = g_param_spec_int("type", "type", "rect, beveled, circle", CMK_BUTTON_TYPE_RECT, CMK_BUTTON_TYPE_CIRCLE, CMK_BUTTON_TYPE_RECT, G_PARAM_READWRITE);
 	
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
@@ -123,8 +118,8 @@ static void cmk_button_set_property(GObject *self_, guint propertyId, const GVal
 	case PROP_TEXT:
 		cmk_button_set_text(self, g_value_get_string(value));
 		break;
-	case PROP_BEVELED:
-		cmk_button_set_beveled(self, g_value_get_boolean(value));
+	case PROP_TYPE:
+		cmk_button_set_type(self, g_value_get_int(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
@@ -142,8 +137,8 @@ static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *va
 	case PROP_TEXT:
 		g_value_set_string(value, cmk_button_get_text(self));
 		break;
-	case PROP_BEVELED:
-		g_value_set_boolean(value, PRIVATE(self)->beveled);
+	case PROP_TYPE:
+		g_value_set_int(value, PRIVATE(self)->type);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
@@ -305,9 +300,6 @@ static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas 
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
 {
-	double radius = cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
-	double degrees = M_PI / 180.0;
-
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
 	cairo_paint(cr);
@@ -317,8 +309,18 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	{
 		const gchar *color = PRIVATE(self)->hover ? "hover" : "selected";
 		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), color));
-		if(PRIVATE(self)->beveled)
+		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED || PRIVATE(self)->type == CMK_BUTTON_TYPE_CIRCLE)
 		{
+			double radius;
+			double degrees = M_PI / 180.0;
+
+			if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
+				radius = cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
+			else
+				radius = MIN(width, height)/2;
+
+			radius = MIN(MAX(radius, 0), MIN(width,height)/2);
+
 			cairo_new_sub_path(cr);
 			cairo_arc(cr, width - radius, radius, radius, -90 * degrees, 0 * degrees);
 			cairo_arc(cr, width - radius, height - radius, radius, 0 * degrees, 90 * degrees);
@@ -381,21 +383,21 @@ CmkWidget * cmk_button_get_content(CmkButton *self)
 	return PRIVATE(self)->content;
 }
 
-void cmk_button_set_beveled(CmkButton *self, gboolean beveled)
+void cmk_button_set_type(CmkButton *self, CmkButtonType type)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self));
-	if(PRIVATE(self)->beveled != beveled)
+	if(PRIVATE(self)->type != type)
 	{
-		PRIVATE(self)->beveled = beveled;
+		PRIVATE(self)->type = type;
 		if(PRIVATE(self)->hover)
 			clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
 	}
 }
 
-gboolean cmk_button_get_beveled(CmkButton *self)
+CmkButtonType cmk_button_get_btype(CmkButton *self)
 {
-	g_return_val_if_fail(CMK_IS_BUTTON(self), FALSE);
-	return PRIVATE(self)->beveled;
+	g_return_val_if_fail(CMK_IS_BUTTON(self), CMK_BUTTON_TYPE_RECT);
+	return PRIVATE(self)->type;
 }
 
 void cmk_button_set_selected(CmkButton *self, gboolean selected)
