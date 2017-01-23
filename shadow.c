@@ -7,50 +7,40 @@
 #include "shadow.h"
 #include <math.h>
 
-struct _CmkShadowContainer
+struct _CmkShadow
 {
 	ClutterActor parent;
 	ClutterCanvas *canvas;
 	gfloat vRadius, hRadius;
 };
 
-static void cmk_shadow_container_iface_init(ClutterContainerIface *iface);
-static void cmk_shadow_container_dispose(GObject *self_);
-static void cmk_shadow_container_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
-static void cmk_shadow_container_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
-static void on_child_added(ClutterContainer *self_, ClutterActor *actor);
-static void on_child_removed(ClutterContainer *self_, ClutterActor *actor);
-static void on_size_changed(CmkShadowContainer *self, GParamSpec *spec, gpointer userdata);
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkShadowContainer *self);
+static void cmk_shadow_dispose(GObject *self_);
+static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
+static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
+static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
+static void on_size_changed(CmkShadow *self, GParamSpec *spec, gpointer userdata);
+static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkShadow *self);
 
-G_DEFINE_TYPE_WITH_CODE(CmkShadowContainer, cmk_shadow_container, CMK_TYPE_WIDGET,
-	G_IMPLEMENT_INTERFACE(CLUTTER_TYPE_CONTAINER, cmk_shadow_container_iface_init));
+G_DEFINE_TYPE(CmkShadow, cmk_shadow, CMK_TYPE_WIDGET);
 
 
 
-CmkShadowContainer * cmk_shadow_container_new()
+CmkShadow * cmk_shadow_new()
 {
-	return CMK_SHADOW_CONTAINER(g_object_new(CMK_TYPE_SHADOW_CONTAINER, NULL));
+	return CMK_SHADOW(g_object_new(CMK_TYPE_SHADOW, NULL));
 }
 
-static void cmk_shadow_container_class_init(CmkShadowContainerClass *class)
+static void cmk_shadow_class_init(CmkShadowClass *class)
 {
-	G_OBJECT_CLASS(class)->dispose = cmk_shadow_container_dispose;
+	G_OBJECT_CLASS(class)->dispose = cmk_shadow_dispose;
 	
-	CLUTTER_ACTOR_CLASS(class)->get_preferred_width = cmk_shadow_container_get_preferred_width;
-	CLUTTER_ACTOR_CLASS(class)->get_preferred_height = cmk_shadow_container_get_preferred_height;
+	CLUTTER_ACTOR_CLASS(class)->get_preferred_width = cmk_shadow_get_preferred_width;
+	CLUTTER_ACTOR_CLASS(class)->get_preferred_height = cmk_shadow_get_preferred_height;
+	CLUTTER_ACTOR_CLASS(class)->allocate = cmk_shadow_allocate;
 }
 
-static void cmk_shadow_container_iface_init(ClutterContainerIface *iface)
+static void cmk_shadow_init(CmkShadow *self)
 {
-	iface->actor_added = on_child_added;
-	iface->actor_removed = on_child_removed;
-}
-
-static void cmk_shadow_container_init(CmkShadowContainer *self)
-{
-	clutter_actor_set_layout_manager(CLUTTER_ACTOR(self), clutter_bin_layout_new(CLUTTER_BIN_ALIGNMENT_START, CLUTTER_BIN_ALIGNMENT_START));
-
 	self->canvas = CLUTTER_CANVAS(clutter_canvas_new());
 	g_signal_connect(self->canvas, "draw", G_CALLBACK(on_draw_canvas), self);
 	clutter_actor_set_content_gravity(CLUTTER_ACTOR(self), CLUTTER_CONTENT_GRAVITY_CENTER);
@@ -58,57 +48,58 @@ static void cmk_shadow_container_init(CmkShadowContainer *self)
 
 	//clutter_actor_set_size(self, 0, 0); // Stops infinite loop of notify::size events
 	g_signal_connect(self, "notify::size", G_CALLBACK(on_size_changed), NULL);
-	//clutter_actor_add_child(CLUTTER_ACTOR(self), self->shadow_container);
+	//clutter_actor_add_child(CLUTTER_ACTOR(self), self->shadow);
 }
 
-static void cmk_shadow_container_dispose(GObject *self_)
+static void cmk_shadow_dispose(GObject *self_)
 {
-	CmkShadowContainer *self = CMK_SHADOW_CONTAINER(self_);
-	G_OBJECT_CLASS(cmk_shadow_container_parent_class)->dispose(self_);
+	CmkShadow *self = CMK_SHADOW(self_);
+	G_OBJECT_CLASS(cmk_shadow_parent_class)->dispose(self_);
 }
 
-static void cmk_shadow_container_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
+static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
-	// TOOD: Care about more than one child?
 	ClutterActor *child = clutter_actor_get_first_child(self_);
 	*minWidth = 0;
 	*natWidth = 0;
 	if(child)
 		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
+	*minWidth += CMK_SHADOW(self_)->hRadius*2;
+	*natWidth += CMK_SHADOW(self_)->hRadius*2;
 }
 
-static void cmk_shadow_container_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
+static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	ClutterActor *child = clutter_actor_get_first_child(self_);
 	*minHeight = 0;
 	*natHeight = 0;
 	if(child)
 		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
+	*minHeight += CMK_SHADOW(self_)->vRadius*2;
+	*natHeight += CMK_SHADOW(self_)->vRadius*2;
 }
 
-static void on_child_added(ClutterContainer *self_, ClutterActor *actor)
+static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
 {
-	gfloat hRadius = CMK_SHADOW_CONTAINER(self_)->hRadius;
-	gfloat vRadius = CMK_SHADOW_CONTAINER(self_)->vRadius;
-	ClutterMargin margin = {hRadius, hRadius, vRadius, vRadius};
-	clutter_actor_set_margin(actor, &margin);
+	CmkShadow *self = CMK_SHADOW(self_);
+	ClutterActor *child = clutter_actor_get_first_child(self_);
+
+	if(child)
+	{
+		gfloat width = box->x2 - box->x1;
+		gfloat height = box->y2 - box->y1;
+		ClutterActorBox childBox = {self->hRadius, self->vRadius, width - self->hRadius, height - self->vRadius};
+		clutter_actor_allocate(child, &childBox, flags);
+	}
+
+	CLUTTER_ACTOR_CLASS(cmk_shadow_parent_class)->allocate(self_, box, flags);
 }
 
-static void on_child_removed(ClutterContainer *self_, ClutterActor *actor)
-{
-}
-
-static void on_size_changed(CmkShadowContainer *self, GParamSpec *spec, gpointer userdata)
+static void on_size_changed(CmkShadow *self, GParamSpec *spec, gpointer userdata)
 {
 	gfloat width, height;
 	clutter_actor_get_size(CLUTTER_ACTOR(self), &width, &height);
 	clutter_canvas_set_size(self->canvas, width, height);
-	
-	//gint canvasWidth = width + self->hRadius*2;
-	//gint canvasHeight = height + self->vRadius*2;
-
-	//clutter_actor_set_position(self->shadow_container, -self->hRadius, -self->vRadius);
-	//clutter_actor_set_size(self->shadow_container, canvasWidth, canvasHeight);
 }
 
 //void boxesForGauss(float sigma, float *sizes, guint n)
@@ -160,7 +151,7 @@ void boxBlurT_4(guchar *scl, guchar *tcl, guint w, guint h, guint r)
 //	return 1000000 * tv.tv_sec + tv.tv_usec;
 //}
 
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, gint height, CmkShadowContainer *self)
+static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, gint height, CmkShadow *self)
 {
 	//unsigned long start = getms();
 	cairo_surface_t *surface = cairo_get_target(cr);
@@ -210,50 +201,44 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, g
 	//unsigned long end = getms();
 	//unsigned long delta = end - start;
 	//double deltams = delta / 1000.0;
-	//printf("shadow_containertime: %f\n", deltams);
+	//printf("shadowtime: %f\n", deltams);
 	return TRUE;
 }
 
-void cmk_shadow_container_set_blur(CmkShadowContainer *self, gfloat radius)
+void cmk_shadow_set_blur(CmkShadow *self, gfloat radius)
 {
-	g_return_if_fail(CMK_IS_SHADOW_CONTAINER(self));
+	g_return_if_fail(CMK_IS_SHADOW(self));
 	self->hRadius = radius;
 	self->vRadius = radius;
 	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	ClutterActor *firstChild = clutter_actor_get_first_child(CLUTTER_ACTOR(self));
-	if(firstChild)
-		on_child_added(CLUTTER_CONTAINER(self), firstChild);
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }
 
 
-void cmk_shadow_container_set_vblur(CmkShadowContainer *self, gfloat radius)
+void cmk_shadow_set_vblur(CmkShadow *self, gfloat radius)
 {
-	g_return_if_fail(CMK_IS_SHADOW_CONTAINER(self));
+	g_return_if_fail(CMK_IS_SHADOW(self));
 	self->vRadius = radius;
 	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	ClutterActor *firstChild = clutter_actor_get_first_child(CLUTTER_ACTOR(self));
-	if(firstChild)
-		on_child_added(CLUTTER_CONTAINER(self), firstChild);
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }
 
-void cmk_shadow_container_set_hblur(CmkShadowContainer *self, gfloat radius)
+void cmk_shadow_set_hblur(CmkShadow *self, gfloat radius)
 {
-	g_return_if_fail(CMK_IS_SHADOW_CONTAINER(self));
+	g_return_if_fail(CMK_IS_SHADOW(self));
 	self->hRadius = radius;
 	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	ClutterActor *firstChild = clutter_actor_get_first_child(CLUTTER_ACTOR(self));
-	if(firstChild)
-		on_child_added(CLUTTER_CONTAINER(self), firstChild);
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }
 
-gfloat cmk_shadow_container_get_vblur(CmkShadowContainer *self)
+gfloat cmk_shadow_get_vblur(CmkShadow *self)
 {
-	g_return_val_if_fail(CMK_IS_SHADOW_CONTAINER(self), 0);
+	g_return_val_if_fail(CMK_IS_SHADOW(self), 0);
 	return self->vRadius;
 }
 
-gfloat cmk_shadow_container_get_hblur(CmkShadowContainer *self)
+gfloat cmk_shadow_get_hblur(CmkShadow *self)
 {
-	g_return_val_if_fail(CMK_IS_SHADOW_CONTAINER(self), 0);
+	g_return_val_if_fail(CMK_IS_SHADOW(self), 0);
 	return self->hRadius;
 }
