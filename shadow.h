@@ -15,13 +15,20 @@ G_BEGIN_DECLS
 #define CMK_TYPE_SHADOW cmk_shadow_get_type()
 G_DECLARE_FINAL_TYPE(CmkShadow, cmk_shadow, CMK, SHADOW, CmkWidget);
 
-CmkShadow * cmk_shadow_new();
+enum
+{
+	CMK_SHADOW_MASK_LEFT = 1,
+	CMK_SHADOW_MASK_RIGHT = 2,
+	CMK_SHADOW_MASK_TOP = 3,
+	CMK_SHADOW_MASK_BOTTOM = 4,
+	CMK_SHADOW_MASK_ALL = CMK_SHADOW_MASK_LEFT | CMK_SHADOW_MASK_RIGHT | CMK_SHADOW_MASK_TOP | CMK_SHADOW_MASK_BOTTOM
+};
 
-void cmk_shadow_set_blur(CmkShadow *shadow, gfloat radius);
-void cmk_shadow_set_vblur(CmkShadow *shadow, gfloat radius);
-void cmk_shadow_set_hblur(CmkShadow *shadow, gfloat radius);
-gfloat cmk_shadow_get_vblur(CmkShadow *shadow);
-gfloat cmk_shadow_get_hblur(CmkShadow *shadow);
+CmkShadow * cmk_shadow_new();
+CmkShadow * cmk_shadow_new_full(guint shadowMask, gfloat radius);
+
+void cmk_shadow_set_mask(CmkShadow *shadow, guint shadowMask);
+void cmk_shadow_set_radius(CmkShadow *shadow, guint radius);
 
 G_END_DECLS
 

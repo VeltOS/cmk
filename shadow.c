@@ -6,19 +6,22 @@
 
 #include "shadow.h"
 #include <math.h>
+#include <string.h>
 
 struct _CmkShadow
 {
 	ClutterActor parent;
+	ClutterActor *shadow;
 	ClutterCanvas *canvas;
-	gfloat vRadius, hRadius;
+	guint radius;
+	guint shadowMask;
 };
 
 static void cmk_shadow_dispose(GObject *self_);
 static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
 static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
 static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
-static void on_size_changed(CmkShadow *self, GParamSpec *spec, gpointer userdata);
+static void on_shadow_size_changed(ClutterActor *shadow, GParamSpec *spec, gpointer userdata);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkShadow *self);
 
 G_DEFINE_TYPE(CmkShadow, cmk_shadow, CMK_TYPE_WIDGET);
@@ -28,6 +31,14 @@ G_DEFINE_TYPE(CmkShadow, cmk_shadow, CMK_TYPE_WIDGET);
 CmkShadow * cmk_shadow_new()
 {
 	return CMK_SHADOW(g_object_new(CMK_TYPE_SHADOW, NULL));
+}
+
+CmkShadow * cmk_shadow_new_full(guint shadowMask, gfloat radius)
+{
+	CmkShadow *self = CMK_SHADOW(g_object_new(CMK_TYPE_SHADOW, NULL));
+	cmk_shadow_set_mask(self, shadowMask);
+	cmk_shadow_set_radius(self, radius);
+	return self;
 }
 
 static void cmk_shadow_class_init(CmkShadowClass *class)
@@ -41,14 +52,15 @@ static void cmk_shadow_class_init(CmkShadowClass *class)
 
 static void cmk_shadow_init(CmkShadow *self)
 {
+	self->shadow = clutter_actor_new();
+
 	self->canvas = CLUTTER_CANVAS(clutter_canvas_new());
 	g_signal_connect(self->canvas, "draw", G_CALLBACK(on_draw_canvas), self);
 	clutter_actor_set_content_gravity(CLUTTER_ACTOR(self), CLUTTER_CONTENT_GRAVITY_CENTER);
-	clutter_actor_set_content(CLUTTER_ACTOR(self), CLUTTER_CONTENT(self->canvas));
+	clutter_actor_set_content(self->shadow, CLUTTER_CONTENT(self->canvas));
 
-	//clutter_actor_set_size(self, 0, 0); // Stops infinite loop of notify::size events
-	g_signal_connect(self, "notify::size", G_CALLBACK(on_size_changed), NULL);
-	//clutter_actor_add_child(CLUTTER_ACTOR(self), self->shadow);
+	g_signal_connect(self->shadow, "notify::size", G_CALLBACK(on_shadow_size_changed), NULL);
+	clutter_actor_add_child(CLUTTER_ACTOR(self), self->shadow);
 }
 
 static void cmk_shadow_dispose(GObject *self_)
@@ -59,24 +71,20 @@ static void cmk_shadow_dispose(GObject *self_)
 
 static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
-	ClutterActor *child = clutter_actor_get_first_child(self_);
 	*minWidth = 0;
 	*natWidth = 0;
+	ClutterActor *child = clutter_actor_get_first_child(self_);
 	if(child)
 		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
-	*minWidth += CMK_SHADOW(self_)->hRadius*2;
-	*natWidth += CMK_SHADOW(self_)->hRadius*2;
 }
 
 static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
-	ClutterActor *child = clutter_actor_get_first_child(self_);
 	*minHeight = 0;
 	*natHeight = 0;
+	ClutterActor *child = clutter_actor_get_first_child(self_);
 	if(child)
 		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
-	*minHeight += CMK_SHADOW(self_)->vRadius*2;
-	*natHeight += CMK_SHADOW(self_)->vRadius*2;
 }
 
 static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
@@ -85,62 +93,121 @@ static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box,
 	ClutterActor *child = clutter_actor_get_first_child(self_);
 
 	if(child)
-	{
-		gfloat width = box->x2 - box->x1;
-		gfloat height = box->y2 - box->y1;
-		ClutterActorBox childBox = {self->hRadius, self->vRadius, width - self->hRadius, height - self->vRadius};
-		clutter_actor_allocate(child, &childBox, flags);
-	}
+		clutter_actor_allocate(child, box, flags);
 
+	gboolean mTop = (self->shadowMask & CMK_SHADOW_MASK_TOP) == CMK_SHADOW_MASK_TOP;
+	gboolean mBottom = (self->shadowMask & CMK_SHADOW_MASK_BOTTOM) == CMK_SHADOW_MASK_BOTTOM;
+	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
+	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
+
+	gfloat width = box->x2 - box->x1;
+	gfloat height = box->y2 - box->y1;
+	ClutterActorBox shadowBox = {
+		mLeft ? (-(gfloat)self->radius) : 0,
+		mTop ? (-(gfloat)self->radius) : 0,
+		width + (mRight ? self->radius : 0),
+		height + (mBottom ? self->radius : 0)
+	};
+	//ClutterActorBox shadowBox = {
+	//	-(gfloat)self->radius,
+	//	-(gfloat)self->radius,
+	//	width + self->radius,
+	//	height + self->radius
+	//};
+
+	clutter_actor_allocate(self->shadow, &shadowBox, flags);
+	
 	CLUTTER_ACTOR_CLASS(cmk_shadow_parent_class)->allocate(self_, box, flags);
 }
 
-static void on_size_changed(CmkShadow *self, GParamSpec *spec, gpointer userdata)
+static void on_shadow_size_changed(ClutterActor *shadow, GParamSpec *spec, gpointer userdata)
 {
 	gfloat width, height;
-	clutter_actor_get_size(CLUTTER_ACTOR(self), &width, &height);
-	clutter_canvas_set_size(self->canvas, width, height);
+	clutter_actor_get_size(shadow, &width, &height);
+	clutter_canvas_set_size(CLUTTER_CANVAS(clutter_actor_get_content(shadow)), width, height);
 }
 
-//void boxesForGauss(float sigma, float *sizes, guint n)
-//{
-//	float wIdeal = sqrt((12*sigma*sigma/n)+1);  // Ideal averaging filter width 
-//	guint wl = floor(wIdeal);
-//	if(wl%2==0)
-//		wl--;
-//	guint wu = wl+2;
-//
-//	float mIdeal = (12*sigma*sigma - n*wl*wl - 4*n*wl - 3*n)/(-4*wl - 4);
-//	float m = round(mIdeal);
-//
-//	for(guint i=0;i<n;++i)
-//		sizes[i] = i<m?wl:wu;
-//}
+void cmk_shadow_set_mask(CmkShadow *self, guint shadowMask)
+{
+	g_return_if_fail(CMK_IS_SHADOW(self));
+	self->shadowMask = shadowMask;
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
+}
 
-// http://blog.ivank.net/fastest-gaussian-blur.html
-void boxBlurH_4(guchar *scl, guchar *tcl, guint w, guint h, guint r)
+void cmk_shadow_set_radius(CmkShadow *self, guint radius)
+{
+	g_return_if_fail(CMK_IS_SHADOW(self));
+	self->radius = radius;
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
+}
+
+
+/*
+ * These blur functions are modified versions of the algorithms
+ * descripted in the "Fastest Gaussion Blur" article:
+ * http://blog.ivank.net/fastest-gaussian-blur.html
+ * The difference is that they can blur a specific region within the
+ * buffer, which allows for edge-only blurring.
+ */
+
+/*
+ * x + r <= ~stride/2 (?)
+ * y + h <= buffer height
+ * w <= stride
+ * 0 < r
+ */
+static void boxBlurH(guchar *src, guchar *dst, guint stride, guint x, guint y, guint w, guint h, guint r)
 {
     float iarr = 1.0 / (r+r+1.0);
-    for(guint i=0; i<h; i++) {
-        guint ti = i*w, li = ti, ri = ti+r;
-        guint fv = scl[ti], lv = scl[ti+w-1], val = (r+1)*fv;
-        for(guint j=0; j<r; j++) val += scl[ti+j];
-        for(guint j=0  ; j<=r ; j++) { val += scl[ri++] - fv       ;   tcl[ti++] = round(val*iarr); }
-        for(guint j=r+1; j<w-r; j++) { val += scl[ri++] - scl[li++];   tcl[ti++] = round(val*iarr); }
-        for(guint j=w-r; j<w  ; j++) { val += lv        - scl[li++];   tcl[ti++] = round(val*iarr); }
+    for(guint i=y; i<y+h; i++)
+	{
+        guint ti = i*stride+x, li = ti, ri = ti+r;
+        guint fv = src[ti], lv = src[ti+w-1], val = (r+1)*fv;
+        for(guint j=0; j<r; j++)
+			val += src[ti+j];
+        for(guint j=0; j<=r; j++) {
+			val += src[ri++] - fv;
+			dst[ti++] = round(val*iarr);
+		}
+        for(guint j=r+1; j<w-r; j++) {
+			val += src[ri++] - src[li++];
+			dst[ti++] = round(val*iarr);
+		}
+        for(guint j=w-r; j<w; j++) {
+			val += lv - src[li++];
+			dst[ti++] = round(val*iarr);
+		}
     }
 }
 
-void boxBlurT_4(guchar *scl, guchar *tcl, guint w, guint h, guint r)
+static void boxBlurV(guchar *src, guchar *dst, guint stride, guint x, guint y, guint w, guint h, guint r)
 {
     float iarr = 1.0 / (r+r+1.0);
-    for(guint i=0; i<w; i++) {
-        guint ti = i, li = ti, ri = ti+r*w;
-        guint fv = scl[ti], lv = scl[ti+w*(h-1)], val = (r+1)*fv;
-        for(guint j=0; j<r; j++) val += scl[ti+j*w];
-        for(guint j=0  ; j<=r ; j++) { val += scl[ri] - fv     ;  tcl[ti] = round(val*iarr);  ri+=w; ti+=w; }
-        for(guint j=r+1; j<h-r; j++) { val += scl[ri] - scl[li];  tcl[ti] = round(val*iarr);  li+=w; ri+=w; ti+=w; }
-        for(guint j=h-r; j<h  ; j++) { val += lv - scl[li]; tcl[ti] = round(val*iarr); li+=w; ti+=w; }
+    for(guint i=x; i<x+w; i++)
+	{
+        guint ti = i+y*stride, li = ti, ri = ti+r*stride;
+        guint fv = src[ti], lv = src[ti+stride*(h-1)], val = (r+1)*fv;
+        for(guint j=0; j<r; j++)
+			val += src[ti+j*stride];
+        for(guint j=0; j<=r; j++) {
+			val += src[ri] - fv;
+			dst[ti] = round(val*iarr);
+			ri+=stride;
+			ti+=stride;
+		}
+        for(guint j=r+1; j<h-r; j++) {
+			val += src[ri] - src[li];
+			dst[ti] = round(val*iarr);
+			li+=stride;
+			ri+=stride;
+			ti+=stride;
+		}
+        for(guint j=h-r; j<h; j++) {
+			val += lv - src[li];
+			dst[ti] = round(val*iarr);
+			li+=stride;
+			ti+=stride;
+		}
     }
 }
 
@@ -151,12 +218,26 @@ void boxBlurT_4(guchar *scl, guchar *tcl, guint w, guint h, guint r)
 //	return 1000000 * tv.tv_sec + tv.tv_usec;
 //}
 
+/*
+ * Draws a shadow onto the canvas. In reality, this just creates a blurred
+ * black box. Only the edges specified in the shadow mask are actually
+ * blurred, plus some optimizations are performed (like not filling/blurring
+ * the center of the canvas where the "shadow-creating" object will be
+ * covering this shadow actor).
+ */
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, gint height, CmkShadow *self)
 {
-	//unsigned long start = getms();
 	cairo_surface_t *surface = cairo_get_target(cr);
 
-	if(cairo_image_surface_get_format(surface) != CAIRO_FORMAT_ARGB32)
+	gboolean mTop = (self->shadowMask & CMK_SHADOW_MASK_TOP) == CMK_SHADOW_MASK_TOP;
+	gboolean mBottom = (self->shadowMask & CMK_SHADOW_MASK_BOTTOM) == CMK_SHADOW_MASK_BOTTOM;
+	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
+	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
+
+	// If the surface isn't an image, or there are no sides to blur,
+	// just get out of here.
+	if(cairo_image_surface_get_format(surface) != CAIRO_FORMAT_ARGB32
+	|| (!mTop && !mBottom && !mLeft && !mRight))
 	{
 		cairo_save(cr);
 		cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
@@ -165,80 +246,97 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, g
 		return TRUE;
 	}
 
+	// Get a pixel buffer to draw the shadow into
 	guchar *buffer = cairo_image_surface_get_data(surface);
-
 	guint length = width*height;
-	guchar *source = g_new0(guchar, length*2);
+
+	// These buffers contain alpha-only versions of the shadow.
+	// There are two for a "double buffer" usage, of which 'source'
+	// will eventually be copied to buffer.
+	guchar *source = g_new(guchar, length*2);
+	guchar *osource = source;
 	guchar *dest = source + length;
+	guchar *tmp = NULL; // For buffer swaps
 
-	// Create a black rectangle that matches the area of the parent actor
-	for(guint x=self->hRadius;x<width-self->hRadius;++x)
-		for(guint y=self->vRadius;y<height-self->vRadius;++y)
-			source[y*width+x] = 255;
-
-	// Do a gaussian blur on the rectangle
-	const guint passes = 2;
-	for(guint i=0;i<passes;++i)
+	// This creates an entirely black canvas, except for the edges that
+	// should be blurred (on those edges, a border of size radius is created). 
+	// This is pretty much the fastest I could get it: on my device, an area
+	// of ~2000x1000 gets filled with borders in ~1ms.
+	memset(source, 255, length*2);
+	if(mTop)
 	{
-		guchar *sc = i%2 ? dest:source;
-		guchar *dt = i%2 ? source:dest;
-		for(guint j=0; j<length; j++)
-			dt[j] = sc[j];
-		boxBlurH_4(dt, sc, width, height, self->hRadius/2);
-		boxBlurT_4(sc, dt, width, height, self->vRadius/2);
+		memset(source, 0, width*self->radius);
+		memset(dest, 0, width*self->radius);
+	}
+	if(mBottom)
+	{
+		memset(source+(guint)((height-self->radius)*width), 0, width*self->radius);
+		memset(dest+(guint)((height-self->radius)*width), 0, width*self->radius);
+	}
+	if(mLeft)
+	{
+		guint yStart = mTop ? self->radius : 0;
+		guint yEnd = mBottom ? (height-self->radius) : height;
+		for(guint y=yStart; y<yEnd; ++y)
+			memset(source+(y*width), 0, self->radius);
+		for(guint y=yStart; y<yEnd; ++y)
+			memset(dest+(y*width), 0, self->radius);
+	}
+	if(mRight)
+	{
+		guint yStart = mTop ? self->radius : 0;
+		guint yEnd = mBottom ? (height-self->radius) : height;
+		for(guint y=yStart; y<yEnd; ++y)
+			memset(source+(guint)((y+1)*width-self->radius), 0, self->radius);
+		for(guint y=yStart; y<yEnd; ++y)
+			memset(dest+(guint)((y+1)*width-self->radius), 0, self->radius);
 	}
 	
-	// Copy result to cairo
-	for(guint i=0;i<length;i++)
+	// By only blurring the required edges, render time goes from
+	// ~30ms for ~2000x1000 area to under 4ms (on my device).
+	// However, because blurring on an edge only transfers that set of
+	// pixels, the pixels have to be transfered back to the source buffer
+	// after a blur. Luckily, we want to do two passes of the blur anyway
+	// for better looks. So just blur in sets of two on the same edge,
+	// and solve both problems at once!
+	if(mTop)
 	{
-		buffer[i*4+0]=0;
-		buffer[i*4+1]=0;
-		buffer[i*4+2]=0;
-		buffer[i*4+3]=source[i];
+		boxBlurV(source, dest, width, 0, 0, width, self->radius*2, self->radius/2);
+		boxBlurV(dest, source, width, 0, 0, width, self->radius*2, self->radius/2);
+	}
+	if(mBottom)
+	{
+		boxBlurV(source, dest, width, 0, height - self->radius*2 - 1, width, self->radius*2, self->radius/2);
+		boxBlurV(dest, source, width, 0, height - self->radius*2 - 1, width, self->radius*2, self->radius/2);
+	}
+	if(mLeft)
+	{
+		boxBlurH(source, dest, width, 0, 0, self->radius*2, height, self->radius/2);
+		boxBlurH(dest, source, width, 0, 0, self->radius*2, height, self->radius/2);
+	}
+	if(mRight)
+	{
+		boxBlurH(source, dest, width, width - self->radius*2 - 1, 0, self->radius*2, height, self->radius/2);
+		boxBlurH(dest, source, width, width - self->radius*2 - 1, 0, self->radius*2, height, self->radius/2);
 	}
 
-	g_free(source);
+	// Copy result to cairo
+	memset(buffer, 0, length*4);
+
+	//unsigned long start = getms();
+	
+	// Just this loop alone takes more time than generating the entire
+	// shadow. Fix? Possibly instead of using the extra source and dest
+	// buffers, modify the blur functions to take channels into account
+	// and just blur between this cairo buffer and a tmp buffer.
+	for(guint i=0,j=3;i<length;++i,j+=4)
+		buffer[j]=source[i];
+
 	//unsigned long end = getms();
 	//unsigned long delta = end - start;
 	//double deltams = delta / 1000.0;
-	//printf("shadowtime: %f\n", deltams);
+	//printf("shadowtime: %fms (for w: %i, h: %i, r: %i)\n", deltams, width, height, self->radius);
+
+	g_free(osource);
 	return TRUE;
-}
-
-void cmk_shadow_set_blur(CmkShadow *self, gfloat radius)
-{
-	g_return_if_fail(CMK_IS_SHADOW(self));
-	self->hRadius = radius;
-	self->vRadius = radius;
-	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
-}
-
-
-void cmk_shadow_set_vblur(CmkShadow *self, gfloat radius)
-{
-	g_return_if_fail(CMK_IS_SHADOW(self));
-	self->vRadius = radius;
-	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
-}
-
-void cmk_shadow_set_hblur(CmkShadow *self, gfloat radius)
-{
-	g_return_if_fail(CMK_IS_SHADOW(self));
-	self->hRadius = radius;
-	clutter_content_invalidate(CLUTTER_CONTENT(self->canvas));
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
-}
-
-gfloat cmk_shadow_get_vblur(CmkShadow *self)
-{
-	g_return_val_if_fail(CMK_IS_SHADOW(self), 0);
-	return self->vRadius;
-}
-
-gfloat cmk_shadow_get_hblur(CmkShadow *self)
-{
-	g_return_val_if_fail(CMK_IS_SHADOW(self), 0);
-	return self->hRadius;
 }
