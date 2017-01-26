@@ -73,7 +73,9 @@ static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight
 {
 	*minWidth = 0;
 	*natWidth = 0;
-	ClutterActor *child = clutter_actor_get_first_child(self_);
+	// The internal shadow actor takes up index 0, so the first child added
+	// by a user will be at index 1.
+	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
 	if(child)
 		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
 }
@@ -82,7 +84,7 @@ static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth
 {
 	*minHeight = 0;
 	*natHeight = 0;
-	ClutterActor *child = clutter_actor_get_first_child(self_);
+	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
 	if(child)
 		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
 }
@@ -90,32 +92,90 @@ static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth
 static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
 {
 	CmkShadow *self = CMK_SHADOW(self_);
-	ClutterActor *child = clutter_actor_get_first_child(self_);
+	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
 
+	gfloat width = box->x2 - box->x1;
+	gfloat height = box->y2 - box->y1;
+	
 	if(child)
-		clutter_actor_allocate(child, box, flags);
+	{
+		ClutterActorBox childBox = {0, 0, width, height};
+		clutter_actor_allocate(child, &childBox, flags);
+	}
 
 	gboolean mTop = (self->shadowMask & CMK_SHADOW_MASK_TOP) == CMK_SHADOW_MASK_TOP;
 	gboolean mBottom = (self->shadowMask & CMK_SHADOW_MASK_BOTTOM) == CMK_SHADOW_MASK_BOTTOM;
 	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
 	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
 
-	gfloat width = box->x2 - box->x1;
-	gfloat height = box->y2 - box->y1;
+	// Set the shadow box's size depending on which sides get a shadow
+	// The base size is the CmkShadow's allocated size, but then the
+	// shadow box expands off the edges
 	ClutterActorBox shadowBox = {
 		mLeft ? (-(gfloat)self->radius) : 0,
 		mTop ? (-(gfloat)self->radius) : 0,
 		width + (mRight ? self->radius : 0),
 		height + (mBottom ? self->radius : 0)
 	};
-	//ClutterActorBox shadowBox = {
-	//	-(gfloat)self->radius,
-	//	-(gfloat)self->radius,
-	//	width + self->radius,
-	//	height + self->radius
-	//};
+
+	// If the CmkShadow's box gets too small, it can mess with the shadow
+	// rendering. This makes sure the width and/or height (depending on
+	// edges being rendered) is always > self->radius*2, which is enough
+	// for the blurring code to not segfault. (The blur code also validates
+	// the width and height before attempting to render just in case, but
+	// if it errors it just doesn't render anything, which looks bad.)
+	// 
+	// Because of this expansion, a black region may start appearing off
+	// of the opposite edge of the shadow (required due to how the blurring
+	// works). To fix this in the easiest possible way, just use Clutter's
+	// clip function to hide the extra pixels created by the expansion.
+	//
+	// TODO: This still has issues when rendering shadows on opposite edges
+	// (ex TOP + BOTTOM, ALL) on very small areas. It won't segfault, but the
+	// blurring starts looking very choppy and eventually disspears completely.
+	// This might be fixed by also expanding the region in this case?
+	guint clipTop = 0, clipBottom = 0, clipLeft = 0, clipRight = 0;
+	gfloat prev;
+
+	if(mLeft != mRight // If left XOR right
+	&& (shadowBox.x2 - shadowBox.x1) <= self->radius*2)
+	{
+		if(mLeft)
+		{
+			prev = shadowBox.x2;
+			shadowBox.x2 = shadowBox.x1 + self->radius*2 + 1;
+			clipRight = shadowBox.x2 - prev;
+		}
+		else
+		{
+			prev = shadowBox.x1;
+			shadowBox.x1 = shadowBox.x2 - self->radius*2 - 1;
+			clipLeft = prev - shadowBox.x1;
+		}
+	}
+
+	if(mTop != mBottom
+	&& (shadowBox.y2 - shadowBox.y1) <= self->radius*2)
+	{
+		if(mTop)
+		{
+			prev = shadowBox.y2;
+			shadowBox.y2 = shadowBox.y1 + self->radius*2 + 1;
+			clipBottom = shadowBox.y2 - prev;
+		}
+		else
+		{
+			prev = shadowBox.y1;
+			shadowBox.y1 = shadowBox.y2 - self->radius*2 - 1;
+			clipTop = prev - shadowBox.y1;
+		}
+	}
 
 	clutter_actor_allocate(self->shadow, &shadowBox, flags);
+
+	// The clip is specified in distance from each edge, while the set_clip
+	// method takes a x,y,width,height. So convert it.
+	clutter_actor_set_clip(self->shadow, clipLeft, clipTop, (shadowBox.x2-shadowBox.x1)-clipLeft-clipRight, (shadowBox.y2-shadowBox.y1)-clipTop-clipBottom);
 	
 	CLUTTER_ACTOR_CLASS(cmk_shadow_parent_class)->allocate(self_, box, flags);
 }
@@ -234,10 +294,13 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, g
 	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
 	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
 
-	// If the surface isn't an image, or there are no sides to blur,
-	// just get out of here.
+	// Make sure we should actually do the shadow. Some radius/width/height
+	// combinations could cause a segfault, so be very careful
 	if(cairo_image_surface_get_format(surface) != CAIRO_FORMAT_ARGB32
-	|| (!mTop && !mBottom && !mLeft && !mRight))
+	|| (self->radius == 0)
+	|| (!mTop && !mBottom && !mLeft && !mRight)
+	|| ((mLeft || mRight) && width <= self->radius*2)
+	|| ((mTop || mBottom) && height <= self->radius*2))
 	{
 		cairo_save(cr);
 		cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
