@@ -404,8 +404,13 @@ void cmk_widget_set_draw_background_color(CmkWidget *self, gboolean draw)
 	g_return_if_fail(CMK_IS_WIDGET(self));
 	if(PRIVATE(self)->drawBackground == draw)
 		return;
+
 	PRIVATE(self)->drawBackground = draw;
 	update_named_background_color(self);
+	
+	// If changing from drawing background to not, clear the background color
+	if(!draw)
+		clutter_actor_set_background_color(CLUTTER_ACTOR(self), NULL);
 }
 
 const gchar * cmk_widget_get_background_color_name(CmkWidget *self)
@@ -435,8 +440,10 @@ const ClutterColor * cmk_widget_get_background_color(CmkWidget *self)
 
 static void update_named_background_color(CmkWidget *self)
 {
+	if(!PRIVATE(self)->drawBackground)
+		return;
 	const ClutterColor *color = NULL;
-	if(PRIVATE(self)->drawBackground && PRIVATE(self)->backgroundColorName)
+	if(PRIVATE(self)->backgroundColorName)
 		color = cmk_widget_get_background_color(self);
 	clutter_actor_set_background_color(CLUTTER_ACTOR(self), color);
 }
