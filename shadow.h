@@ -30,6 +30,8 @@ CmkShadow * cmk_shadow_new_full(guint shadowMask, gfloat radius);
 void cmk_shadow_set_mask(CmkShadow *shadow, guint shadowMask);
 void cmk_shadow_set_radius(CmkShadow *shadow, guint radius);
 
+ClutterActor * cmk_shadow_get_first_child(CmkShadow *shadow);
+
 G_END_DECLS
 
 #endif

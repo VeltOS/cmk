@@ -73,9 +73,7 @@ static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight
 {
 	*minWidth = 0;
 	*natWidth = 0;
-	// The internal shadow actor takes up index 0, so the first child added
-	// by a user will be at index 1.
-	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
+	ClutterActor *child = cmk_shadow_get_first_child(CMK_SHADOW(self_));
 	if(child)
 		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
 }
@@ -84,7 +82,7 @@ static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth
 {
 	*minHeight = 0;
 	*natHeight = 0;
-	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
+	ClutterActor *child = cmk_shadow_get_first_child(CMK_SHADOW(self_));
 	if(child)
 		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
 }
@@ -199,6 +197,13 @@ void cmk_shadow_set_radius(CmkShadow *self, guint radius)
 	g_return_if_fail(CMK_IS_SHADOW(self));
 	self->radius = radius;
 	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
+}
+
+ClutterActor * cmk_shadow_get_first_child(CmkShadow *shadow)
+{
+	// The internal shadow actor takes up index 0, so the first child added
+	// by a user will be at index 1.
+	return clutter_actor_get_child_at_index(CLUTTER_ACTOR(shadow), 1);
 }
 
 
