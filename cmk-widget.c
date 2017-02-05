@@ -152,6 +152,12 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 	}
 }
 
+gboolean cmk_widget_destroy(CmkWidget *widget)
+{
+	clutter_actor_destroy(CLUTTER_ACTOR(widget));
+	return G_SOURCE_REMOVE;
+}
+
 static void emit_style_changed(CmkWidget *self)
 {
 	CmkWidgetPrivate *private = PRIVATE(self);
@@ -452,4 +458,21 @@ void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color)
 {
 	if(!color) return; // Don't produce warnings because this happens naturally sometimes during object destruction
 	cairo_set_source_rgba(cr, color->red/255.0, color->green/255.0, color->blue/255.0, color->alpha/255.0);
+}
+
+void cmk_scale_actor_box(ClutterActorBox *b, gfloat scale, gboolean move)
+{
+	if(!b)
+		return;
+	gfloat width = b->x2 - b->x1;
+	gfloat height = b->y2 - b->y1;
+
+	if(move)
+	{
+		b->x1 *= scale;
+		b->y1 *= scale;
+	}
+
+	b->x2 = b->x1 + width*scale;
+	b->y2 = b->y1 + height*scale;
 }

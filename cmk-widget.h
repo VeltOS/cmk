@@ -41,6 +41,13 @@ struct _CmkWidgetClass
 CmkWidget * cmk_widget_new();
 
 /*
+ * Exactly the same as clutter_actor_destroy, except returns G_SOURCE_REMOVE
+ * so this can easily be called from timeouts. Safe to pass in a regular
+ * ClutterActor* casted to a CmkWidget*.
+ */
+gboolean cmk_widget_destroy(CmkWidget *widget);
+
+/*
  * This is a special instance of CmkWidget which is used for styling when no
  * inherited values can be found. You may set styles on it, but it should not
  * be parented/mapped. The return value should be unrefed after use, unless
@@ -139,6 +146,12 @@ const ClutterColor * cmk_widget_get_background_color(CmkWidget *widget);
  * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba.
  */
 void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
+
+/*
+ * Convenience for scaling a ClutterActorBox. Set move to TRUE to scale
+ * its top left x,y coordinates as well as its size.
+ */
+void cmk_scale_actor_box(ClutterActorBox *b, gfloat scale, gboolean move);
 
 G_END_DECLS
 
