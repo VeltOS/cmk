@@ -14,6 +14,7 @@ pkg_check_modules(LIBRSVG REQUIRED librsvg-2.0)
 add_library(cmk SHARED
 	src/button.c
 	src/shadow.c
+	src/cmk-util.c
 	src/cmk-widget.c
 	src/cmk-icon-loader.c
 	src/cmk-icon.c

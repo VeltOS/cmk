@@ -26,9 +26,9 @@ struct _CmkLabelClass
 CmkLabel * cmk_label_new(void);
 CmkLabel * cmk_label_new_with_text(const gchar *text);
 
-void cmk_label_set_text(CmkLabel *label, const gchar *text);
-const gchar * cmk_label_get_text(CmkLabel *label);
-void cmk_label_set_markup(CmkLabel *label, const gchar *markup);
+void cmk_label_set_text(CmkLabel *text, const gchar *val);
+const gchar * cmk_label_get_text(CmkLabel *text);
+void cmk_label_set_markup(CmkLabel *text, const gchar *markup);
 
 G_END_DECLS
 

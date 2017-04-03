@@ -328,6 +328,9 @@ static void on_background_changed(CmkWidget *self_)
 		const ClutterColor *color = cmk_widget_get_foreground_color(self_);
 		clutter_text_set_color(PRIVATE(CMK_BUTTON(self_))->text, color);
 	}
+	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
+	if(content)
+		clutter_content_invalidate(content);
 	CMK_WIDGET_CLASS(cmk_button_parent_class)->background_changed(self_);
 }
 
@@ -347,29 +350,34 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 
 	gdouble clickAnimProgress = clutter_timeline_get_progress(PRIVATE(self)->clickAnim);
 
+	if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED || PRIVATE(self)->type == CMK_BUTTON_TYPE_CIRCLE)
+	{
+		double radius;
+		double degrees = M_PI / 180.0;
+
+		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
+			radius = cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
+		else
+			radius = MIN(width, height)/2;
+
+		radius = MIN(MAX(radius, 0), MIN(width,height)/2);
+
+		cairo_new_sub_path(cr);
+		cairo_arc(cr, width - radius, radius, radius, -90 * degrees, 0 * degrees);
+		cairo_arc(cr, width - radius, height - radius, radius, 0 * degrees, 90 * degrees);
+		cairo_arc(cr, radius, height - radius, radius, 90 * degrees, 180 * degrees);
+		cairo_arc(cr, radius, radius, radius, 180 * degrees, 270 * degrees);
+		cairo_close_path(cr);
+		cairo_clip(cr);
+	}
+
+	const gchar *bgcolor = cmk_widget_get_background_color_name(CMK_WIDGET(self));
+	cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), bgcolor));
+
+	cairo_paint(cr);
+
 	if(PRIVATE(self)->hover || PRIVATE(self)->selected || clutter_actor_has_key_focus(CLUTTER_ACTOR(self)) || (clickAnimProgress > 0 && clickAnimProgress < 1))
 	{
-		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED || PRIVATE(self)->type == CMK_BUTTON_TYPE_CIRCLE)
-		{
-			double radius;
-			double degrees = M_PI / 180.0;
-
-			if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
-				radius = cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
-			else
-				radius = MIN(width, height)/2;
-
-			radius = MIN(MAX(radius, 0), MIN(width,height)/2);
-
-			cairo_new_sub_path(cr);
-			cairo_arc(cr, width - radius, radius, radius, -90 * degrees, 0 * degrees);
-			cairo_arc(cr, width - radius, height - radius, radius, 0 * degrees, 90 * degrees);
-			cairo_arc(cr, radius, height - radius, radius, 90 * degrees, 180 * degrees);
-			cairo_arc(cr, radius, radius, radius, 180 * degrees, 270 * degrees);
-			cairo_close_path(cr);
-			cairo_clip(cr);
-		}
-
 		const gchar *color = PRIVATE(self)->hover ? "hover" : "selected";
 		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), color));
 

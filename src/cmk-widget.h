@@ -154,6 +154,11 @@ const ClutterColor * cmk_widget_get_background_color(CmkWidget *widget);
 void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
 
 /*
+ * Simple 1-topalpha blend.
+ */
+void clutter_color_blend(const ClutterColor *top, const ClutterColor *bottom, ClutterColor *out);
+
+/*
  * Convenience for scaling a ClutterActorBox. Set move to TRUE to scale
  * its top left x,y coordinates as well as its size.
  */

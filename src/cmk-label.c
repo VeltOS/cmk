@@ -25,7 +25,7 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 static void on_background_changed(CmkWidget *self_);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkLabel, cmk_label, CMK_TYPE_WIDGET);
-#define PRIVATE(label) ((CmkLabelPrivate *)cmk_label_get_instance_private(label))
+#define PRIVATE(text) ((CmkLabelPrivate *)cmk_label_get_instance_private(text))
 
 CmkLabel * cmk_label_new(void)
 {
@@ -56,8 +56,11 @@ static void cmk_label_init(CmkLabel *self)
 
 	PangoFontDescription *desc = pango_font_description_new();
 	pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
+
+	//pango_font_description_set_size(desc, 20 * PANGO_SCALE);
 	
 	PRIVATE(self)->text = CLUTTER_TEXT(clutter_text_new());
+	//clutter_actor_set_scale(CLUTTER_ACTOR(PRIVATE(self)->text), 0.5, 0.5);
 	clutter_text_set_font_description(PRIVATE(self)->text, desc);
 	pango_font_description_free(desc);
 
@@ -103,10 +106,10 @@ static void on_background_changed(CmkWidget *self_)
 	CMK_WIDGET_CLASS(cmk_label_parent_class)->background_changed(self_);
 }
 
-void cmk_label_set_text(CmkLabel *self, const gchar *text)
+void cmk_label_set_text(CmkLabel *self, const gchar *val)
 {
 	g_return_if_fail(CMK_IS_LABEL(self));
-	clutter_text_set_text(PRIVATE(self)->text, text);
+	clutter_text_set_text(PRIVATE(self)->text, val);
 }
 
 const gchar * cmk_label_get_text(CmkLabel *self)
