@@ -170,7 +170,8 @@ static void on_style_changed(CmkWidget *self_)
 static void on_background_changed(CmkWidget *self_)
 {
 	ClutterCanvas *canvas = CLUTTER_CANVAS(clutter_actor_get_content(CLUTTER_ACTOR(self_)));
-	clutter_content_invalidate(CLUTTER_CONTENT(canvas));
+	if(PRIVATE(CMK_ICON(self_))->useForegroundColor)
+		clutter_content_invalidate(CLUTTER_CONTENT(canvas));
 	CMK_WIDGET_CLASS(cmk_icon_parent_class)->background_changed(self_);
 }
 
