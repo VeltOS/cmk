@@ -52,7 +52,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 
 static void cmk_label_init(CmkLabel *self)
 {
-	clutter_actor_set_layout_manager(CLUTTER_ACTOR(self), clutter_bin_layout_new(CLUTTER_BIN_ALIGNMENT_CENTER, CLUTTER_BIN_ALIGNMENT_CENTER));
+	clutter_actor_set_layout_manager(CLUTTER_ACTOR(self), clutter_bin_layout_new(CLUTTER_BIN_ALIGNMENT_CENTER, CLUTTER_BIN_ALIGNMENT_START));
 
 	PangoFontDescription *desc = pango_font_description_new();
 	pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
@@ -60,6 +60,10 @@ static void cmk_label_init(CmkLabel *self)
 	//pango_font_description_set_size(desc, 20 * PANGO_SCALE);
 	
 	PRIVATE(self)->text = CLUTTER_TEXT(clutter_text_new());
+	clutter_text_set_line_wrap(PRIVATE(self)->text, TRUE);
+	clutter_text_set_line_alignment(PRIVATE(self)->text, PANGO_ALIGN_CENTER);
+	clutter_text_set_ellipsize(PRIVATE(self)->text, PANGO_ELLIPSIZE_NONE);
+	
 	//clutter_actor_set_scale(CLUTTER_ACTOR(PRIVATE(self)->text), 0.5, 0.5);
 	clutter_text_set_font_description(PRIVATE(self)->text, desc);
 	pango_font_description_free(desc);
