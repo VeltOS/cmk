@@ -103,7 +103,7 @@ static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean ex
 		return;
 
 	gfloat minW, natW, minH, natH;
-	clutter_actor_get_preferred_size(CLUTTER_ACTOR(self), &minW, &natW, &minH, &natH); 
+	clutter_actor_get_preferred_size(CLUTTER_ACTOR(self), &minW, &minH, &natW, &natH); 
 	gfloat maxScrollW = MAX(natW - width, 0);
 	gfloat maxScrollH = MAX(natH - height, 0);
 	new.x = MIN(MAX(0, new.x), maxScrollW);
@@ -113,7 +113,6 @@ static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean ex
 		return;
 
 	private->scroll = new;
-	g_message("%f, %f", new.x, new.y);
 
 	ClutterMatrix transform;
 	clutter_matrix_init_identity(&transform);
