@@ -37,6 +37,8 @@ enum
 	SIGNAL_STYLE_CHANGED = 1,
 	SIGNAL_BACKGROUND_CHANGED,
 	SIGNAL_KEY_FOCUS_CHANGED,
+	SIGNAL_REPLACE,
+	SIGNAL_BACK,
 	SIGNAL_LAST
 };
 
@@ -102,6 +104,10 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	signals[SIGNAL_BACKGROUND_CHANGED] = g_signal_new("background-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, background_changed), NULL, NULL, NULL, G_TYPE_NONE, 0);
 
 	signals[SIGNAL_KEY_FOCUS_CHANGED] = g_signal_new("key-focus-changed", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, key_focus_changed), NULL, NULL, NULL, G_TYPE_NONE, 1, CLUTTER_TYPE_ACTOR);
+	
+	signals[SIGNAL_REPLACE] = g_signal_new("replace", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, replace), NULL, NULL, NULL, G_TYPE_NONE, 1, CMK_TYPE_WIDGET);
+	
+	signals[SIGNAL_BACK] = g_signal_new("back", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkWidgetClass, back), NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
 static void cmk_widget_init(CmkWidget *self)
@@ -472,6 +478,39 @@ static void update_named_background_color(CmkWidget *self)
 	clutter_actor_set_background_color(CLUTTER_ACTOR(self), color);
 }
 
+static void fade_out_complete(ClutterActor *actor, gboolean destroy)
+{
+	g_signal_handlers_disconnect_by_func(actor, fade_out_complete, (gpointer)(gsize)destroy);
+	if(destroy)
+		clutter_actor_destroy(actor);
+	else
+		clutter_actor_hide(actor);
+}
+
+void cmk_widget_fade_out(CmkWidget *self, gboolean destroy)
+{
+	ClutterActor *self_ = CLUTTER_ACTOR(self);
+	g_signal_connect(self_, "transitions_completed", G_CALLBACK(fade_out_complete), (gpointer)(gsize)destroy);
+	clutter_actor_save_easing_state(self_);
+	clutter_actor_set_easing_mode(self_, CLUTTER_EASE_OUT_SINE);
+	clutter_actor_set_easing_duration(self_, 200);
+	clutter_actor_set_opacity(self_, 0);
+	clutter_actor_restore_easing_state(self_);
+	// TRANSITION_MEMLEAK_FIX(self_, "opacity");
+}
+
+void cmk_widget_fade_in(CmkWidget *self)
+{
+	ClutterActor *self_ = CLUTTER_ACTOR(self);
+	clutter_actor_set_opacity(self_, 0);
+	clutter_actor_show(self_);
+	clutter_actor_save_easing_state(self_);
+	clutter_actor_set_easing_mode(self_, CLUTTER_EASE_IN_SINE);
+	clutter_actor_set_easing_duration(self_, 200);
+	clutter_actor_set_opacity(self_, 255);
+	clutter_actor_restore_easing_state(self_);
+}
+
 void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color)
 {
 	if(!color) return; // Don't produce warnings because this happens naturally sometimes during object destruction
@@ -707,4 +746,14 @@ void cmk_focus_stack_pop(CmkWidget *widget)
 		return;
 	focusStackTopMappedSignalId = g_signal_connect(widget, "notify::mapped", G_CALLBACK(on_focus_stack_top_mapped), NULL);
 	on_focus_stack_top_mapped(CLUTTER_ACTOR(widget));
+}
+
+void cmk_widget_replace(CmkWidget *self, CmkWidget *replacement)
+{
+	g_signal_emit(self, signals[SIGNAL_REPLACE], 0, replacement);
+}
+
+void cmk_widget_back(CmkWidget *self)
+{
+	g_signal_emit(self, signals[SIGNAL_BACK], 0);
 }

@@ -38,6 +38,21 @@ struct _CmkWidgetClass
 	 * gains key focus. Chain up to parent class if event goes unhandled.
 	 */
 	void (*key_focus_changed) (CmkWidget *self, ClutterActor *newfocus);
+	
+	/*
+	 * Emitted by widget subclasses when the parent widget should replace
+	 * them with a new widget. It is up to the parent widget to honor this.
+	 * (This can also be used as a general 'forward' signal, with replacement
+	 * being NULL and the parent having a planned list of screens.)
+	 */
+	void (*replace) (CmkWidget *self, CmkWidget *replacement);
+	
+	/*
+	 * Emitted by widget subclasses when the parent should remove this widget
+	 * and return to the previously shown widget (opposite of 'replace').
+	 * It is up to the parent widget to honor this.
+	 */
+	void (*back) (CmkWidget *self);
 };
 
 /*
@@ -149,6 +164,17 @@ const gchar * cmk_widget_get_background_color_name(CmkWidget *widget);
 const ClutterColor * cmk_widget_get_background_color(CmkWidget *widget);
 
 /*
+ * Fades out the actor and then hides it.
+ * Set destroy to TRUE to destroy the actor after the fade completes.
+ */
+void cmk_widget_fade_out(CmkWidget *widget, gboolean destroy);
+
+/*
+ * Shows the actor and fades it in.
+ */
+void cmk_widget_fade_in(CmkWidget *widget);
+
+/*
  * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba.
  */
 void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
@@ -174,6 +200,18 @@ guint cmk_redirect_keyboard_focus(ClutterActor *actor, ClutterActor *redirection
 guint cmk_focus_on_mapped(ClutterActor *actor);
 void cmk_focus_stack_push(CmkWidget *widget);
 void cmk_focus_stack_pop(CmkWidget *widget);
+
+/*
+ * Convenience for
+ * g_signal_emit_by_name(widget, "replace", replacement);
+ */
+void cmk_widget_replace(CmkWidget *widget, CmkWidget *replacement);
+
+/*
+ * Convenience for
+ * g_signal_emit_by_name(widget, "back");
+ */
+void cmk_widget_back(CmkWidget *widget);
 
 G_END_DECLS
 
