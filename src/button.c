@@ -5,13 +5,14 @@
  */
 
 #include "button.h"
+#include "cmk-label.h"
 #include <math.h>
 
 typedef struct _CmkButtonPrivate CmkButtonPrivate;
 struct _CmkButtonPrivate 
 {
 	CmkWidget *content;
-	ClutterText *text; // Owned by Clutter. Do not free.
+	CmkLabel *text;
 	gboolean hover;
 	gboolean selected;
 	CmkButtonType type;
@@ -268,12 +269,14 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 	gfloat maxWidth = box->x2 - box->x1;
 	gfloat hPad = MIN(MAX((maxHeight - (minHeight-(padding*2)))/2, 0), padding);
 	gfloat wPad = MIN(MAX((maxWidth - (minWidth-(padding*2)))/2, 0), padding);
+	hPad = (gint)hPad;
+	wPad = (gint)wPad;
 
 	if(private->content && private->text)
 	{
 		gfloat min, nat;
 		clutter_actor_get_preferred_width(CLUTTER_ACTOR(private->content), maxHeight-hPad*2, &min, &nat);
-		gfloat contentRight = MIN(wPad+nat, maxWidth);
+		gfloat contentRight = (gint)(MIN(wPad+nat, maxWidth));
 		ClutterActorBox contentBox = {wPad, hPad, contentRight, maxHeight-hPad};
 		clutter_actor_allocate(CLUTTER_ACTOR(private->content), &contentBox, flags);
 		gfloat textRight = MAX(contentRight+wPad, maxWidth-wPad);
@@ -351,11 +354,6 @@ static void on_style_changed(CmkWidget *self_)
 
 static void on_background_changed(CmkWidget *self_)
 {
-	if(PRIVATE(CMK_BUTTON(self_))->text)
-	{
-		const ClutterColor *color = cmk_widget_get_foreground_color(self_);
-		clutter_text_set_color(PRIVATE(CMK_BUTTON(self_))->text, color);
-	}
 	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
 	if(content)
 		clutter_content_invalidate(content);
@@ -449,11 +447,11 @@ void cmk_button_set_text(CmkButton *self, const gchar *text)
 	{
 		if(!PRIVATE(self)->text)
 		{
-			PRIVATE(self)->text = CLUTTER_TEXT(clutter_text_new());
+			PRIVATE(self)->text = cmk_label_new();
 			clutter_actor_set_y_align(CLUTTER_ACTOR(PRIVATE(self)->text), CLUTTER_ACTOR_ALIGN_CENTER);
 			clutter_actor_add_child(CLUTTER_ACTOR(self), CLUTTER_ACTOR(PRIVATE(self)->text));
 		}
-		clutter_text_set_text(PRIVATE(self)->text, text);
+		cmk_label_set_text(PRIVATE(self)->text, text);
 	}
 	else if(PRIVATE(self)->text)
 	{
@@ -466,7 +464,7 @@ const gchar * cmk_button_get_text(CmkButton *self)
 	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
 	if(!PRIVATE(self)->text)
 		return NULL;
-	return clutter_text_get_text(PRIVATE(self)->text);
+	return cmk_label_get_text(PRIVATE(self)->text);
 }
 
 void cmk_button_set_content(CmkButton *self, CmkWidget *content)
