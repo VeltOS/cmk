@@ -84,7 +84,6 @@ static void cmk_label_init(CmkLabel *self)
 	private->text = CLUTTER_TEXT(clutter_text_new());
 	clutter_text_set_line_wrap(private->text, TRUE);
 	clutter_text_set_ellipsize(private->text, PANGO_ELLIPSIZE_NONE);
-	clutter_actor_set_reactive(CLUTTER_ACTOR(private->text), TRUE);
 	
 	PangoFontDescription *desc = pango_font_description_new();
 	clutter_text_set_font_description(private->text, desc);
