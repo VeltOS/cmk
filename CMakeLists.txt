@@ -17,14 +17,14 @@ pkg_check_modules(CLUTTER REQUIRED clutter-1.0>=1.26)
 pkg_check_modules(LIBRSVG REQUIRED librsvg-2.0)
 
 add_library(cmk SHARED
-	src/button.c
-	src/shadow.c
-	src/cmk-util.c
-	src/cmk-widget.c
-	src/cmk-icon-loader.c
+	src/cmk-button.c
 	src/cmk-icon.c
+	src/cmk-icon-loader.c
 	src/cmk-label.c
 	src/cmk-scroll-box.c
+	src/cmk-shadow.c
+	src/cmk-util.c
+	src/cmk-widget.c
 )
 set_target_properties(cmk PROPERTIES SOVERSION ${CMK_VERSION} VERSION ${CMK_VERSION})
 target_link_libraries(cmk

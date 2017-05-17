@@ -4,7 +4,7 @@
  * Licensed under the Apache License 2 <www.apache.org/licenses/LICENSE-2.0>.
  */
 
-#include "shadow.h"
+#include "cmk-shadow.h"
 #include <math.h>
 #include <string.h>
 
