@@ -55,6 +55,12 @@ struct _CmkWidgetClass
 	void (*back) (CmkWidget *self);
 };
 
+typedef struct
+{
+	const gchar *name;
+	ClutterColor color;
+} CmkNamedColor;
+
 /*
  * CmkWidget is not abstract. Creating a widget on its own is effectively
  * just a ClutterActor with styling properties.
@@ -110,6 +116,12 @@ const ClutterColor * cmk_widget_style_get_color(CmkWidget *widget, const gchar *
  * inherited by child CmkWidgets.
  */
 void cmk_widget_style_set_color(CmkWidget *widget, const gchar *name, const ClutterColor *color);
+
+/*
+ * Takes an array of CmkNamedColor (last one must be a NULLed
+ * struct) and calls cmk_widget_style_set_color on each.
+ */
+void cmk_widget_style_set_colors(CmkWidget *widget, const CmkNamedColor *colors);
 
 /*
  * Getters and setters for other style properties. If these are set to invalid
@@ -212,6 +224,19 @@ void cmk_widget_replace(CmkWidget *widget, CmkWidget *replacement);
  * g_signal_emit_by_name(widget, "back");
  */
 void cmk_widget_back(CmkWidget *widget);
+
+/*
+ * Same as clutter_actor_add_child but casts for you.
+ */
+void cmk_widget_add_child(CmkWidget *widget, CmkWidget *child);
+
+/*
+ * Binds the CmkWidget to its parent so that it always
+ * fills its allocation.
+ * The bind can be removed by removing the clutter constraint
+ * "cmk-widget-bind-fill"
+ */
+void cmk_widget_bind_fill(CmkWidget *widget);
 
 G_END_DECLS
 

@@ -84,6 +84,7 @@ static void cmk_label_init(CmkLabel *self)
 	private->text = CLUTTER_TEXT(clutter_text_new());
 	clutter_text_set_line_wrap(private->text, TRUE);
 	clutter_text_set_ellipsize(private->text, PANGO_ELLIPSIZE_NONE);
+	clutter_actor_set_reactive(CLUTTER_ACTOR(private->text), TRUE);
 	
 	PangoFontDescription *desc = pango_font_description_new();
 	clutter_text_set_font_description(private->text, desc);
@@ -284,4 +285,10 @@ void cmk_label_set_line_alignment(CmkLabel *self, PangoAlignment alignment)
 {
 	g_return_if_fail(CMK_IS_LABEL(self));
 	clutter_text_set_line_alignment(PRIVATE(self)->text, alignment);
+}
+
+ClutterText * cmk_label_get_clutter_text(CmkLabel *self)
+{
+	g_return_val_if_fail(CMK_IS_LABEL(self), NULL);
+	return PRIVATE(self)->text;
 }

@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: libcmk
+Description: A Clutter-based Material Design widget toolkit
+Version: @CMK_VERSION@
+Requires: clutter-1.0 >= 1.26
+Requires.private: librsvg-2.0
+Libs: -L${libdir} -lcmk
+Cflags -I${includedir}

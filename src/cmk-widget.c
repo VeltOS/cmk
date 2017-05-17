@@ -218,6 +218,13 @@ void cmk_widget_style_set_color(CmkWidget *self, const gchar *name, const Clutte
 	g_signal_emit(self, signals[SIGNAL_BACKGROUND_CHANGED], 0);
 }
 
+void cmk_widget_style_set_colors(CmkWidget *self, const CmkNamedColor *colors)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	for(guint i=0; colors[i].name != NULL; ++i)
+		cmk_widget_style_set_color(self, colors[i].name, &colors[i].color);
+}
+
 void cmk_widget_style_set_bevel_radius(CmkWidget *self, float radius)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
@@ -756,4 +763,16 @@ void cmk_widget_replace(CmkWidget *self, CmkWidget *replacement)
 void cmk_widget_back(CmkWidget *self)
 {
 	g_signal_emit(self, signals[SIGNAL_BACK], 0);
+}
+
+void cmk_widget_add_child(CmkWidget *self, CmkWidget *child)
+{
+	clutter_actor_add_child(CLUTTER_ACTOR(self), CLUTTER_ACTOR(child));
+}
+
+void cmk_widget_bind_fill(CmkWidget *self)
+{
+	ClutterActor *self_ = CLUTTER_ACTOR(self);
+	ClutterActor *parent = clutter_actor_get_parent(self_);
+	clutter_actor_add_constraint_with_name(self_, "cmk-widget-bind-fill", clutter_bind_constraint_new(parent, CLUTTER_BIND_ALL, 0));
 }

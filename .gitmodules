@@ -1,0 +1,3 @@
+[submodule "cmk-clutter"]
+	path = cmk-clutter
+	url = git://git.gnome.org/clutter
