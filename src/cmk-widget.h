@@ -238,6 +238,14 @@ void cmk_widget_add_child(CmkWidget *widget, CmkWidget *child);
  */
 void cmk_widget_bind_fill(CmkWidget *widget);
 
+/*
+ * Similar to calling clutter_actor_set_margin, but instead of pixel
+ * values, these are multipliers of the widget's padding, which
+ * automatically update as the widget's style properties do.
+ * The default is -1 for all, which is to disable margin multipliers.
+ */
+void cmk_widget_set_margin_multipliers(CmkWidget *widget, gfloat left, gfloat right, gfloat top, gfloat bottom);
+
 G_END_DECLS
 
 #endif

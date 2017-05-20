@@ -15,6 +15,8 @@ struct _CmkWidgetPrivate
 	float bevelRadius;
 	float padding;
 	float scaleFactor;
+	
+	gfloat mLeft, mRight, mTop, mBottom; // Margin multiplier factors
 
 	gchar *backgroundColorName;
 	gboolean drawBackground;
@@ -117,6 +119,7 @@ static void cmk_widget_init(CmkWidget *self)
 	private->padding = -1;
 	private->bevelRadius = -1;
 	private->scaleFactor = -1;
+	private->mLeft = private->mRight = private->mTop = private->mBottom = -1;
 	private->emittingStyleChanged = TRUE;
 	set_actual_style_parent(self, styleDefault);
 	private->emittingStyleChanged = FALSE;
@@ -411,6 +414,8 @@ static void on_style_changed(CmkWidget *self)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
 	update_named_background_color(self);
+	CmkWidgetPrivate *private = PRIVATE(self);
+	cmk_widget_set_margin_multipliers(self, private->mLeft, private->mRight, private->mTop, private->mBottom);
 	PRIVATE(self)->emittingStyleChanged = FALSE; // see emit_style_changed
 }
 
@@ -775,4 +780,27 @@ void cmk_widget_bind_fill(CmkWidget *self)
 	ClutterActor *self_ = CLUTTER_ACTOR(self);
 	ClutterActor *parent = clutter_actor_get_parent(self_);
 	clutter_actor_add_constraint_with_name(self_, "cmk-widget-bind-fill", clutter_bind_constraint_new(parent, CLUTTER_BIND_ALL, 0));
+}
+
+void cmk_widget_set_margin_multipliers(CmkWidget *self, gfloat left, gfloat right, gfloat top, gfloat bottom)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	
+	CmkWidgetPrivate *private = PRIVATE(self);
+	private->mLeft = left;
+	private->mRight = right;
+	private->mTop = top;
+	private->mBottom = bottom;
+	
+	if(left < 0 || right < 0 || top < 0 || bottom < 0)
+		return;
+	
+	gfloat padding = cmk_widget_style_get_padding(self);
+	ClutterMargin margin = {
+		left * padding,
+		right * padding,
+		top * padding,
+		bottom *padding,
+	};
+	clutter_actor_set_margin(CLUTTER_ACTOR(self), &margin);
 }
