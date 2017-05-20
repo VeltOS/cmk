@@ -14,7 +14,7 @@ gboolean cmk_init(int *argc, char ***argv)
 	
 	clutter_set_windowing_backend(CLUTTER_WINDOWING_X11);
 	
-	return clutter_init(&argc, &argv) == CLUTTER_INIT_SUCCESS;
+	return clutter_init(argc, argv) == CLUTTER_INIT_SUCCESS;
 }
 
 void cmk_main(void)
