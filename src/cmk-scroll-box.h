@@ -23,6 +23,11 @@ struct _CmkScrollBoxClass
 
 CmkScrollBox * cmk_scroll_box_new(ClutterScrollMode scrollMode);
 
+/*
+ * Enable or disable scrollbars. Default enabled.
+ */
+void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *box, gboolean show);
+
 G_END_DECLS
 
 #endif
