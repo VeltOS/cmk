@@ -213,6 +213,22 @@ guint cmk_focus_on_mapped(ClutterActor *actor);
 void cmk_focus_stack_push(CmkWidget *widget);
 void cmk_focus_stack_pop(CmkWidget *widget);
 
+
+/*
+ * TRUE to grab, FALSE to ungrab. This could possibly called with
+ * multiple TRUEs in a row, so the implementation should use some
+ * counting method to pair grabs to ungrabs.
+ */
+typedef void (*CmkGrabHandler) (gboolean grab, gpointer userdata);
+
+/*
+ * Set a handler to do extra functionality on grabs. This is useful
+ * for window managers to grab all input, even over the area not
+ * drawn by Clutter.
+ */
+void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata);
+void cmk_grab(gboolean grab);
+
 /*
  * Convenience for
  * g_signal_emit_by_name(widget, "replace", replacement);

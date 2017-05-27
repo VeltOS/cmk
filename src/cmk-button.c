@@ -13,10 +13,8 @@ struct _CmkButtonPrivate
 {
 	CmkWidget *content;
 	CmkLabel *text;
-	gboolean hover;
-	gboolean selected;
+	gboolean held, hover, selected;
 	CmkButtonType type;
-	//ClutterTimeline *hoverAnim;
 	ClutterTimeline *downAnim;
 	ClutterTimeline *upAnim;
 	ClutterPoint clickPoint;
@@ -44,8 +42,8 @@ static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *va
 static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
 static void cmk_button_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
 static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
-static void on_clicked(ClutterClickAction *action, CmkButton *self);
-static void on_held_changed(ClutterClickAction *action, GParamSpec *spec, CmkButton *self);
+static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event);
+static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event);
 static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event);
 static void on_style_changed(CmkWidget *self_);
 static void on_background_changed(CmkWidget *self_);
@@ -91,6 +89,8 @@ static void cmk_button_class_init(CmkButtonClass *class)
 	actorClass->key_press_event = on_key_pressed;
 	actorClass->key_focus_in = on_key_focus;
 	actorClass->key_focus_out = on_key_unfocus;
+	actorClass->button_press_event = on_button_press;
+	actorClass->button_release_event = on_button_release;
 
 	CMK_WIDGET_CLASS(class)->style_changed = on_style_changed;
 	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
@@ -110,40 +110,34 @@ static void on_anim_canvas(CmkButton *self)
 
 static void cmk_button_init(CmkButton *self)
 {
-	cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
-	ClutterContent *canvas = clutter_canvas_new();
-
+	ClutterActor *self_ = CLUTTER_ACTOR(self);
 	CmkButtonPrivate *private = PRIVATE(self);
+	
+	clutter_actor_set_reactive(self_, TRUE);
+	cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
+
+	ClutterContent *canvas = clutter_canvas_new();
+	g_signal_connect(canvas, "draw", G_CALLBACK(on_draw_canvas), self);
+	g_signal_connect(self_, "notify::size", G_CALLBACK(on_size_changed), canvas);
+	clutter_actor_set_content_gravity(self_, CLUTTER_CONTENT_GRAVITY_CENTER);
+	clutter_actor_set_content(self_, canvas);
+
+	// TODO: Styling time
 	private->downAnim = clutter_timeline_new(300);
 	private->upAnim = clutter_timeline_new(300);
-	//private->hoverAnim = clutter_timeline_new(2000);
 	g_signal_connect_swapped(private->downAnim, "new-frame", G_CALLBACK(on_anim_canvas), self);
 	g_signal_connect_swapped(private->upAnim, "new-frame", G_CALLBACK(on_anim_canvas), self);
-	//g_signal_connect_swapped(private->hoverAnim, "new-frame", G_CALLBACK(on_anim_canvas), self);
-
-	g_signal_connect(canvas, "draw", G_CALLBACK(on_draw_canvas), self);
-
-	ClutterActor *actor = CLUTTER_ACTOR(self);
-	clutter_actor_set_reactive(actor, TRUE);
-
-	g_signal_connect(actor, "notify::size", G_CALLBACK(on_size_changed), canvas);
-
-	clutter_actor_set_content_gravity(actor, CLUTTER_CONTENT_GRAVITY_CENTER);
-	clutter_actor_set_content(actor, canvas);
-
-	// This handles grabbing the cursor when the user holds down the mouse
-	ClutterAction *action = clutter_click_action_new();
-	g_signal_connect(action, "clicked", G_CALLBACK(on_clicked), NULL);
-	g_signal_connect(action, "notify::held", G_CALLBACK(on_held_changed), self);
-	clutter_actor_add_action(actor, action);
 }
 
 static void cmk_button_dispose(GObject *self_)
 {
+	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	clutter_actor_set_content(CLUTTER_ACTOR(self_), NULL);
-	g_clear_object(&(PRIVATE(CMK_BUTTON(self_))->downAnim));
-	g_clear_object(&(PRIVATE(CMK_BUTTON(self_))->upAnim));
-	//g_clear_object(&(PRIVATE(CMK_BUTTON(self_))->hoverAnim));
+	g_clear_object(&private->downAnim);
+	g_clear_object(&private->upAnim);
+	if(private->held)
+		cmk_grab(FALSE); // Be careful to not let a cmk_grab(TRUE) go unpaired
+	private->held = FALSE;
 	G_OBJECT_CLASS(cmk_button_parent_class)->dispose(self_);
 }
 
@@ -295,41 +289,43 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 	CLUTTER_ACTOR_CLASS(cmk_button_parent_class)->allocate(self_, box, flags);
 }
 
-static void on_clicked(ClutterClickAction *action, CmkButton *self)
+static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
 {
-	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
+	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
+	private->held = TRUE;
+	
+	cmk_grab(TRUE);
+	clutter_input_device_grab(event->device, self_);
+	
+	gfloat rx, ry;
+	clutter_actor_get_transformed_position(self_, &rx, &ry);
+	clutter_point_init(&private->clickPoint, event->x - rx, event->y - ry);
+	clutter_timeline_stop(private->upAnim);
+	clutter_timeline_stop(private->downAnim);
+	clutter_timeline_start(private->downAnim);
+	return CLUTTER_EVENT_STOP;
 }
 
-static void on_held_changed(ClutterClickAction *action, GParamSpec *spec, CmkButton *self)
+static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event)
 {
-	CmkButtonPrivate *private = PRIVATE(self);
-	gboolean held;
-	g_object_get(action, "held", &held, NULL);
-	if(held)
-	{
-		gfloat x, y, rx, ry;
-		clutter_click_action_get_coords(action, &x, &y);
-		clutter_actor_get_transformed_position(CLUTTER_ACTOR(self), &rx, &ry);
-		clutter_point_init(&private->clickPoint, x - rx, y - ry);
-		clutter_timeline_stop(private->upAnim);
-		clutter_timeline_stop(private->downAnim);
-		clutter_timeline_start(private->downAnim);
-	}
-	else
-	{
-		clutter_timeline_stop(private->upAnim);
-		clutter_timeline_start(private->upAnim);
-	}
+	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
+	private->held = FALSE;
+	clutter_input_device_ungrab(event->device);
+	cmk_grab(FALSE);
+	
+	clutter_timeline_stop(private->upAnim);
+	clutter_timeline_start(private->upAnim);
+
+	private->hover = clutter_actor_has_pointer(self_);
+	clutter_content_invalidate(clutter_actor_get_content(self_));
+	
+	if(private->hover)
+		g_signal_emit(self_, signals[SIGNAL_ACTIVATE], 0);
+	return CLUTTER_EVENT_STOP;
 }
 
 static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event)
 {
-	//g_message("crossing");
-	//CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
-	//clutter_timeline_set_direction(private->hoverAnim, event->type == CLUTTER_ENTER ? CLUTTER_TIMELINE_FORWARD : CLUTTER_TIMELINE_BACKWARD);
-	//clutter_timeline_rewind(private->hoverAnim);
-	//clutter_timeline_start(private->hoverAnim);
-
 	if(event->type == CLUTTER_ENTER)
 		PRIVATE(CMK_BUTTON(self_))->hover = TRUE;
 	else
@@ -344,9 +340,6 @@ static void on_style_changed(CmkWidget *self_)
 	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
 	if(content)
 		clutter_content_invalidate(content);
-	//float padding = cmk_style_get_padding(style);
-	//ClutterMargin margin = {padding, padding, padding, padding};
-	//clutter_actor_set_margin(CLUTTER_ACTOR(PRIVATE(CMK_BUTTON(self_))->text), &margin);
 	clutter_actor_queue_relayout(CLUTTER_ACTOR(self_));
 	
 	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_);
@@ -369,13 +362,15 @@ static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas 
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
 {
+	CmkButtonPrivate *private = PRIVATE(self);
+	
+	// Clear
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
 	cairo_paint(cr);
 	cairo_restore(cr);
 
-	CmkButtonPrivate *private = PRIVATE(self);
-
+	// For non-square buttons, clip the drawing area
 	if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED || PRIVATE(self)->type == CMK_BUTTON_TYPE_CIRCLE)
 	{
 		double radius;
@@ -397,40 +392,38 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 		cairo_clip(cr);
 	}
 
+	// Paint background
 	const gchar *bgcolor = cmk_widget_get_background_color_name(CMK_WIDGET(self));
 	cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), bgcolor));
-
 	cairo_paint(cr);
 
-	//gdouble hoverAnimProgress = clutter_timeline_get_progress(PRIVATE(self)->hoverAnim);
-	gdouble downAnimProgress = clutter_timeline_get_progress(PRIVATE(self)->downAnim);
-	gdouble upAnimProgress = clutter_timeline_get_progress(PRIVATE(self)->upAnim);
+	// Paint hover / selected color
 	if(private->hover
 	|| private->selected
-	|| clutter_actor_has_key_focus(CLUTTER_ACTOR(self))
-	|| (downAnimProgress > 0 && downAnimProgress <= 1)
-	|| (upAnimProgress > 0 && upAnimProgress < 1))
+	|| clutter_actor_has_key_focus(CLUTTER_ACTOR(self)))
 	{
-		//if(hoverAnimProgress == 0)
-		//	hoverAnimProgress = 1;
 		const gchar *color = private->hover ? "hover" : "selected";
-		//const ClutterColor *c = cmk_widget_style_get_color(CMK_WIDGET(self), color);
-		//cairo_set_source_rgba(cr, c->red/255.0, c->green/255.0, c->blue/255.0, c->alpha/255.0 * hoverAnimProgress);
 		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), color));
 		cairo_paint(cr);
 	}
 	
-	if(clutter_timeline_is_playing(private->upAnim)
-	|| (downAnimProgress > 0 && downAnimProgress <= 1)
-	|| (upAnimProgress > 0 && upAnimProgress < 1))
+	// Click anim (includes time when the user holds the button)
+	if(private->held
+	|| clutter_timeline_is_playing(private->upAnim)
+	|| clutter_timeline_is_playing(private->downAnim))
 	{
-		if((upAnimProgress > 0 || clutter_timeline_is_playing(private->upAnim)) && downAnimProgress == 0)
+		gdouble downAnimProgress = clutter_timeline_get_progress(private->downAnim);
+		gdouble upAnimProgress = clutter_timeline_get_progress(private->upAnim);
+		
+		// The down anim resets to 0 progress after it stops, which means the
+		// circle will dissappear before the up animation can complete.
+		if(!clutter_timeline_is_playing(private->downAnim))
 			downAnimProgress = 1;
-		cairo_new_sub_path(cr);
+		
 		gfloat x = PRIVATE(self)->clickPoint.x;
 		gfloat y = PRIVATE(self)->clickPoint.y;
-		if(x < 0) x = width / 2;
-		if(y < 0) y = height / 2;
+		
+		cairo_new_sub_path(cr);
 		cairo_arc(cr, x, y, MAX(width, height)*1.5*downAnimProgress, 0, 2*M_PI);
 		cairo_close_path(cr);
 		cairo_set_source_rgba(cr, 1, 1, 1, (1-upAnimProgress)*0.2);
@@ -506,11 +499,10 @@ CmkButtonType cmk_button_get_btype(CmkButton *self)
 void cmk_button_set_selected(CmkButton *self, gboolean selected)
 {
 	g_return_if_fail(CMK_IS_BUTTON(self));
-	if(PRIVATE(self)->selected != selected)
-	{
-		PRIVATE(self)->selected = selected;
-		clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
-	}
+	if(PRIVATE(self)->selected == selected)
+		return;
+	PRIVATE(self)->selected = selected;
+	clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
 }
 
 gboolean cmk_button_get_selected(CmkButton *self)

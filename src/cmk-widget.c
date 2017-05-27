@@ -760,6 +760,21 @@ void cmk_focus_stack_pop(CmkWidget *widget)
 	on_focus_stack_top_mapped(CLUTTER_ACTOR(widget));
 }
 
+static CmkGrabHandler grabHandler = NULL;
+static gpointer grabHandlerData = NULL;
+
+void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata)
+{
+	grabHandler = handler;
+	grabHandlerData = userdata;
+}
+
+void cmk_grab(gboolean grab)
+{
+	if(grabHandler)
+		grabHandler(grab, grabHandlerData);
+}
+
 void cmk_widget_replace(CmkWidget *self, CmkWidget *replacement)
 {
 	g_signal_emit(self, signals[SIGNAL_REPLACE], 0, replacement);
