@@ -28,6 +28,13 @@ CmkScrollBox * cmk_scroll_box_new(ClutterScrollMode scrollMode);
  */
 void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *box, gboolean show);
 
+/*
+ * Set whether to use an inner shadow on each of the given edges
+ * to represent scrolling. Shadow is only shown when not scrolled
+ * all the way to that edge.
+ */
+void cmk_scroll_box_set_use_shadow(CmkScrollBox *box, gboolean l, gboolean r, gboolean t, gboolean b);
+
 G_END_DECLS
 
 #endif

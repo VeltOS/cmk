@@ -5,14 +5,18 @@
  */
 
 #include "cmk-scroll-box.h"
+#include "cmk-shadow.h"
 
 typedef struct _CmkScrollBoxPrivate CmkScrollBoxPrivate;
 struct _CmkScrollBoxPrivate
 {
 	ClutterScrollMode scrollMode;
 	ClutterPoint scroll;
-	gboolean scrollbars;
 	gfloat natW, natH;
+	gboolean scrollbars;
+	CmkShadoutil *shadow;
+	gboolean lShad, rShad, tShad, bShad;
+	gboolean lShadDraw, rShadDraw, tShadDraw, bShadDraw;
 };
 
 enum
@@ -24,6 +28,7 @@ enum
 
 static GParamSpec *properties[PROP_LAST];
 
+static void cmk_scroll_box_dispose(GObject *self_);
 static void cmk_scroll_box_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void on_queue_relayout(ClutterActor *self_);
@@ -45,6 +50,7 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 	GObjectClass *base = G_OBJECT_CLASS(class);
 	base->get_property = cmk_scroll_box_get_property;
 	base->set_property = cmk_scroll_box_set_property;
+	base->dispose = cmk_scroll_box_dispose;
 
 	ClutterActorClass *actorClass = CLUTTER_ACTOR_CLASS(class);
 	actorClass->queue_relayout = on_queue_relayout;
@@ -62,9 +68,23 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 
 static void cmk_scroll_box_init(CmkScrollBox *self)
 {
+	CmkScrollBoxPrivate *private = PRIVATE(self);
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
 	clutter_actor_set_clip_to_allocation(CLUTTER_ACTOR(self), TRUE);
 	clutter_point_init(&(PRIVATE(self)->scroll), 0.0f, 0.0f);
+
+	private->shadow = cmk_shadoutil_new();
+	cmk_shadoutil_set_size(private->shadow, 20);
+	cmk_shadoutil_set_edges(private->shadow, 0, 0, 0, 0);
+	cmk_shadoutil_set_mode(private->shadow, CMK_SHADOW_MODE_INNER);
+	cmk_shadoutil_set_actor(private->shadow, CLUTTER_ACTOR(self));
+}
+
+static void cmk_scroll_box_dispose(GObject *self_)
+{
+	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+	g_clear_object(&private->shadow);
+	G_OBJECT_CLASS(cmk_scroll_box_parent_class)->dispose(self_);
 }
 
 static void cmk_scroll_box_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec)
@@ -116,23 +136,100 @@ static void on_queue_relayout(ClutterActor *self_)
 	scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
 }
 
+#define FLOAT_TO_POINTER(f) (void *)*(gsize*)&f
+#define POINTER_TO_FLOAT(p) *(gfloat *)(guint32*)&p
+
+static void fdoanimate(ClutterTimeline *timeline, gint msecs, GObject *object)
+{
+	const gchar *prop = g_object_get_data(G_OBJECT(timeline), "prop");
+	gpointer startp = g_object_get_data(G_OBJECT(timeline), "start");
+	gpointer endp = g_object_get_data(G_OBJECT(timeline), "end");
+	gfloat start = POINTER_TO_FLOAT(startp);
+	gfloat end = POINTER_TO_FLOAT(endp);
+	
+	gfloat prog = clutter_timeline_get_progress(timeline);
+	gfloat val = start + (end-start)*prog;
+
+	g_object_set(object, prop, val, NULL);
+}
+
+static void fanimate(gpointer object, const gchar *prop, guint ms, gfloat end) 
+{
+	gfloat start;
+	g_object_get(G_OBJECT(object), prop, &start, NULL);
+	if(start == end)
+		return;
+	
+	ClutterTimeline *timeline = clutter_timeline_new(ms);
+	g_object_set_data_full(G_OBJECT(timeline), "prop", g_strdup(prop), g_free);
+	g_object_set_data(G_OBJECT(timeline), "start", FLOAT_TO_POINTER(start));
+	g_object_set_data(G_OBJECT(timeline), "end", FLOAT_TO_POINTER(end));
+	g_signal_connect(timeline, "new-frame", G_CALLBACK(fdoanimate), object);
+	g_signal_connect(timeline, "completed", G_CALLBACK(g_object_unref), NULL);
+	clutter_timeline_start(timeline);
+}
+
+static void ensure_edge_shadow(CmkShadoutil *util, const gchar *edge, gboolean *shad, gboolean *shadDraw, gfloat percent)
+{
+	if(*shad)
+	{
+		if(!*shadDraw && percent > 0)
+		{
+			*shadDraw = TRUE;
+			fanimate(util, edge, 100, 1);
+		}
+		else if(*shadDraw && percent == 0)
+		{
+			*shadDraw = FALSE;
+			fanimate(util, edge, 100, 0);
+		}
+	}
+	else if(*shadDraw)
+	{
+		*shadDraw = FALSE;
+		fanimate(util, edge, 100, 0);
+	}
+}
+
+static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloat maxScrollH)
+{
+	gfloat wEndPercent = maxScrollW / private->natW;
+	gfloat wPercent = private->scroll.x / private->natW;
+	gfloat hEndPercent = maxScrollH / private->natH;
+	gfloat hPercent = private->scroll.y / private->natH;
+
+	ensure_edge_shadow(private->shadow, "left", &private->lShad, &private->lShadDraw, wPercent);
+	ensure_edge_shadow(private->shadow, "right", &private->rShad, &private->rShadDraw, wEndPercent-wPercent);
+	ensure_edge_shadow(private->shadow, "top", &private->tShad, &private->tShadDraw, hPercent);
+	ensure_edge_shadow(private->shadow, "bottom", &private->bShad, &private->bShadDraw, hEndPercent-hPercent);
+}
+
 static void on_paint(ClutterActor *self_)
 {
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->paint(self_);
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
 	
-	if(!private->scrollbars)
-		return;
-	
 	gfloat width, height;
 	clutter_actor_get_size(self_, &width, &height);
+
 	update_preferred_size(self_);
 	
-	gfloat hBarSize = MIN(1, (height / private->natH)) * height; 
-	gfloat wBarSize = MIN(1, (width / private->natW)) * width; 
+	gfloat maxScrollW = MAX(private->natW - width, 0);
+	gfloat maxScrollH = MAX(private->natH - height, 0);
 	gfloat hPercent = private->scroll.y / private->natH;
 	gfloat wPercent = private->scroll.x / private->natW;
 
+	ensure_shadow(private, maxScrollW, maxScrollH);
+	
+	ClutterActorBox box = {0, 0, width, height};
+	cmk_shadoutil_paint(private->shadow, &box);
+
+	if(!private->scrollbars)
+		return;
+
+	gfloat hBarSize = MIN(1, (height / private->natH)) * height; 
+	gfloat wBarSize = MIN(1, (width / private->natW)) * width; 
+	
 	// TODO: Adjustable sizing + dpi scale
 	const gfloat size = 8;
 	
@@ -143,10 +240,15 @@ static void on_paint(ClutterActor *self_)
 	{
 		// TODO: Non-depricated drawing API
 		// TODO: Stylable colors
+		//cogl_set_source_color4ub(0,0,0,100);
+		//cogl_rectangle(width - size-6,
+		//               hPercent * height-4,
+		//               width,
+		//               hPercent * height + hBarSize + 4);
 		cogl_set_source_color4ub(255,255,255,150);
-		cogl_rectangle(width - size,
+		cogl_rectangle(width - size - size/2,
 		               hPercent * height,
-		               width,
+		               width- size/2,
 		               hPercent * height + hBarSize);
 	}
 	if(private->natW > width)
@@ -162,36 +264,32 @@ static void on_paint(ClutterActor *self_)
 static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean exact)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(self);
-
 	gfloat width = clutter_actor_get_width(CLUTTER_ACTOR(self));
 	gfloat height = clutter_actor_get_height(CLUTTER_ACTOR(self));
 	
 	ClutterPoint new = *point;
-
+	
 	if(!exact)
 	{
 		// Don't scroll anywhere if the requested point is already in view
-		if(new.x >= private->scroll.x && new.x <= private->scroll.x + height)
+		if(new.x >= private->scroll.x && new.x <= private->scroll.x + width)
 			new.x = private->scroll.x;
 		if(new.y >= private->scroll.y && new.y <= private->scroll.y + height)
 			new.y = private->scroll.y;
 	}
-
-	//if(clutter_point_equals(&private->scroll, &new))
-	//	return;
-
+	
 	update_preferred_size(CLUTTER_ACTOR(self));
 	
 	gfloat maxScrollW = MAX(private->natW - width, 0);
 	gfloat maxScrollH = MAX(private->natH - height, 0);
 	new.x = MIN(MAX(0, new.x), maxScrollW);
 	new.y = MIN(MAX(0, new.y), maxScrollH);
-
+	
 	if(clutter_point_equals(&private->scroll, &new))
 		return;
-
+	
 	private->scroll = new;
-
+	
 	ClutterMatrix transform;
 	clutter_matrix_init_identity(&transform);
 	cogl_matrix_translate(&transform,
@@ -245,4 +343,14 @@ void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *self, gboolean show)
 		return;
 	private->scrollbars = show;
 	clutter_actor_queue_redraw(CLUTTER_ACTOR(self));
+}
+
+void cmk_scroll_box_set_use_shadow(CmkScrollBox *self, gboolean l, gboolean r, gboolean t, gboolean b)
+{
+	g_return_if_fail(CMK_IS_SCROLL_BOX(self));
+	CmkScrollBoxPrivate *private = PRIVATE(self);
+	private->lShad = l;
+	private->rShad = r;
+	private->tShad = t;
+	private->bShad = b;
 }
