@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.4)
 project(libcmk)
 
-set(CMK_VERSION 0.1.0)
+set(CMK_VERSION 0.2)
 set(CMAKE_BUILD_TYPE DEBUG)
 
 # Assume the user wants to install Cmk to /usr unless otherwise specified
