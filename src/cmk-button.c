@@ -45,9 +45,8 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event);
 static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event);
 static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event);
-static void on_style_changed(CmkWidget *self_);
+static void on_styles_changed(CmkWidget *self_, guint flags);
 static void on_background_changed(CmkWidget *self_);
-static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self);
 static gboolean on_key_pressed(ClutterActor *self_, ClutterKeyEvent *event);
 static void on_key_focus(ClutterActor *self_);
@@ -92,9 +91,8 @@ static void cmk_button_class_init(CmkButtonClass *class)
 	actorClass->button_press_event = on_button_press;
 	actorClass->button_release_event = on_button_release;
 
-	CMK_WIDGET_CLASS(class)->style_changed = on_style_changed;
-	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
-	
+	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
+
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", "", G_PARAM_READWRITE);
 	properties[PROP_TYPE] = g_param_spec_int("type", "type", "rect, beveled, circle", CMK_BUTTON_TYPE_RECT, CMK_BUTTON_TYPE_CIRCLE, CMK_BUTTON_TYPE_RECT, G_PARAM_READWRITE);
 	
@@ -118,7 +116,6 @@ static void cmk_button_init(CmkButton *self)
 
 	ClutterContent *canvas = clutter_canvas_new();
 	g_signal_connect(canvas, "draw", G_CALLBACK(on_draw_canvas), self);
-	g_signal_connect(self_, "notify::size", G_CALLBACK(on_size_changed), canvas);
 	clutter_actor_set_content_gravity(self_, CLUTTER_CONTENT_GRAVITY_CENTER);
 	clutter_actor_set_content(self_, canvas);
 
@@ -183,7 +180,8 @@ static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	*minWidth = 0;
-	float padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	// TODO
+	float padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 
 	if(private->content)
 	{
@@ -210,7 +208,8 @@ static void cmk_button_get_preferred_height(ClutterActor *self_, gfloat forWidth
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	*minHeight = 0;
-	float padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	// TODO
+	float padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 	
 	if(private->content)
 	{
@@ -245,6 +244,12 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 	 * gets the rest. Otherwise, the single child gets all the space except
 	 * padding.
 	 */
+	
+	gfloat maxHeight = box->y2 - box->y1;
+	gfloat maxWidth = box->x2 - box->x1;
+	ClutterContent *canvas = clutter_actor_get_content(CLUTTER_ACTOR(self_));
+	if(canvas)
+		clutter_canvas_set_size(CLUTTER_CANVAS(canvas), maxWidth, maxHeight);
 
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	if(!private->content && !private->text)
@@ -253,14 +258,13 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 		return;
 	}
 
-	float padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	// TODO
+	float padding = 20; // cmk_widget_style_get_padding(CMK_WIDGET(self_));
 	
 	gfloat minHeight, natHeight, minWidth, natWidth;
 	clutter_actor_get_preferred_height(self_, -1, &minHeight, &natHeight);
 	clutter_actor_get_preferred_width(self_, -1, &minWidth, &natWidth);
 
-	gfloat maxHeight = box->y2 - box->y1;
-	gfloat maxWidth = box->x2 - box->x1;
 	gfloat hPad = MIN(MAX((maxHeight - (minHeight-(padding*2)))/2, 0), padding);
 	gfloat wPad = MIN(MAX((maxWidth - (minWidth-(padding*2)))/2, 0), padding);
 	hPad = (gint)hPad;
@@ -335,29 +339,12 @@ static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event)
 	return TRUE;
 }
 
-static void on_style_changed(CmkWidget *self_)
+static void on_styles_changed(CmkWidget *self_, guint flags)
 {
+	CMK_WIDGET_CLASS(cmk_button_parent_class)->styles_changed(self_, flags);
 	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
 	if(content)
 		clutter_content_invalidate(content);
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self_));
-	
-	CMK_WIDGET_CLASS(cmk_button_parent_class)->style_changed(self_);
-}
-
-static void on_background_changed(CmkWidget *self_)
-{
-	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
-	if(content)
-		clutter_content_invalidate(content);
-	CMK_WIDGET_CLASS(cmk_button_parent_class)->background_changed(self_);
-}
-
-static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas)
-{
-	gfloat width, height;
-	clutter_actor_get_size(self, &width, &height);
-	clutter_canvas_set_size(CLUTTER_CANVAS(canvas), width, height);
 }
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
@@ -377,7 +364,8 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 		double degrees = M_PI / 180.0;
 
 		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
-			radius = cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
+			// TODO
+			radius = 5;// cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
 		else
 			radius = MIN(width, height)/2;
 
@@ -393,8 +381,8 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	}
 
 	// Paint background
-	const gchar *bgcolor = cmk_widget_get_background_color_name(CMK_WIDGET(self));
-	cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), bgcolor));
+	const ClutterColor *color = cmk_widget_get_background_clutter_color(CMK_WIDGET(self));
+	cairo_set_source_clutter_color(cr, color);
 	cairo_paint(cr);
 
 	// Paint hover / selected color
@@ -403,7 +391,7 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	|| clutter_actor_has_key_focus(CLUTTER_ACTOR(self)))
 	{
 		const gchar *color = private->hover ? "hover" : "selected";
-		cairo_set_source_clutter_color(cr, cmk_widget_style_get_color(CMK_WIDGET(self), color));
+		cairo_set_source_clutter_color(cr, cmk_widget_get_named_color(CMK_WIDGET(self), color));
 		cairo_paint(cr);
 	}
 	

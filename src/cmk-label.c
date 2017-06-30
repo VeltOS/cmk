@@ -31,8 +31,7 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 static void cmk_label_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
 static void cmk_label_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
 static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
-static void on_background_changed(CmkWidget *self_);
-static void on_style_changed(CmkWidget *self_);
+static void on_styles_changed(CmkWidget *self_, guint flags);
 static void on_clutter_settings_changed(CmkLabel *self);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkLabel, cmk_label, CMK_TYPE_WIDGET);
@@ -65,8 +64,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 	actorClass->get_preferred_width = cmk_label_get_preferred_width;
 	actorClass->get_preferred_height = cmk_label_get_preferred_height;
 	
-	CMK_WIDGET_CLASS(class)->background_changed = on_background_changed;
-	CMK_WIDGET_CLASS(class)->style_changed = on_style_changed;
+	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", NULL, G_PARAM_READWRITE);
 	properties[PROP_SIZE] = g_param_spec_float("size", "size", "size in pt", -1, G_MAXFLOAT, -1, G_PARAM_READWRITE | G_PARAM_CONSTRUCT);
@@ -78,6 +76,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 
 static void cmk_label_init(CmkLabel *self)
 {
+	g_message("label: %p", self);
 	CmkLabelPrivate *private = PRIVATE(self);
 	private->scale = 1;
 	
@@ -94,7 +93,7 @@ static void cmk_label_init(CmkLabel *self)
 	private->settingsChangedId = g_signal_connect_swapped(clutter_get_default_backend(),
 		"settings-changed",
 		G_CALLBACK(on_clutter_settings_changed),
-		self);		
+		self);
 }
 
 static void cmk_label_dispose(GObject *self_)
@@ -159,35 +158,38 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 static void cmk_label_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	clutter_actor_get_preferred_width(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), forHeight, minWidth, natWidth);
-	gfloat padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	// TODO
+	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 }
 
 static void cmk_label_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	clutter_actor_get_preferred_height(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), forWidth, minHeight, natHeight);
-	gfloat padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	// TODO
+	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 }
 
 static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
 {
-	gfloat padding = cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	cmk_label_set_font_size_pt(CMK_LABEL(self_), PRIVATE(CMK_LABEL(self_))->size);
+	// TODO
+	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 	ClutterActorBox text = {0, 0, box->x2 - box->x1, box->y2 - box->y1};
 	clutter_actor_allocate(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), &text, flags);
 	CLUTTER_ACTOR_CLASS(cmk_label_parent_class)->allocate(self_, box, flags);
 }
 
-static void on_background_changed(CmkWidget *self_)
+static void on_styles_changed(CmkWidget *self_, guint flags)
 {
-	const ClutterColor *color = cmk_widget_get_foreground_color(self_);
-	clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
-	CMK_WIDGET_CLASS(cmk_label_parent_class)->background_changed(self_);
-}
-
-static void on_style_changed(CmkWidget *self_)
-{
-	cmk_label_set_font_size_pt(CMK_LABEL(self_), PRIVATE(CMK_LABEL(self_))->size);
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self_));
-	CMK_WIDGET_CLASS(cmk_label_parent_class)->style_changed(self_);
+	CMK_WIDGET_CLASS(cmk_label_parent_class)->styles_changed(self_, flags);
+	if((flags & CMK_STYLE_FLAG_COLORS)
+	|| (flags & CMK_STYLE_FLAG_BACKGROUND_NAME))
+	{
+		const ClutterColor *color = cmk_widget_get_foreground_clutter_color(self_);
+		clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
+	}
+	if(flags & CMK_STYLE_FLAG_DP)
+		cmk_label_set_font_size_pt(CMK_LABEL(self_), PRIVATE(CMK_LABEL(self_))->size);
 }
 
 static void on_clutter_settings_changed(CmkLabel *self)
@@ -216,7 +218,7 @@ void cmk_label_set_font_size_pt(CmkLabel *self, gfloat size)
 		pango_font_description_free(desc);
 	}
 
-	double abs = size * (96.0/72.0) * PRIVATE(self)->scale * cmk_widget_style_get_scale_factor(CMK_WIDGET(self)); 
+	double abs = size * (96.0/72.0) * PRIVATE(self)->scale * cmk_widget_get_dp_scale(CMK_WIDGET(self)); 
 
 	// Get the current font description instead of using private->desc,
 	// because it may have been modified by the user

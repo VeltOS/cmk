@@ -13,10 +13,11 @@ gboolean cmk_init(int *argc, char ***argv);
 void cmk_main(void);
 
 /*
- * Automatically updates the default style widget's scaling factor
+ * Automatically updates the widget's scaling factor
  * based on the global dconf scaling factor setting.
+ * Automatically called on the CmkWidget returned by cmk_window_new.
  */
-void cmk_auto_dpi_scale(void);
+void cmk_auto_dpi_scale(CmkWidget *root);
 
 /*
  * Convenience for creating a ClutterStage covered by a CmkWidget background.
