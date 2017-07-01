@@ -15,12 +15,28 @@ G_BEGIN_DECLS
 #define CMK_TYPE_ICON_LOADER cmk_icon_loader_get_type()
 G_DECLARE_FINAL_TYPE(CmkIconLoader, cmk_icon_loader, CMK, ICON_LOADER, GObject);
 
+/**
+ * SECTION:cmk-icon-loader
+ * @TITLE: CmkIconLoader
+ * @SHORT_DESCRIPTION: Utilities for loading icon themes
+ *
+ * CmkIconLoader is a class to load icons from system icons themes.
+ */
+
 CmkIconLoader * cmk_icon_loader_new(void);
 
-/* Returns new ref to default loader or creates new loader if no default */
+/**
+ * cmk_icon_loader_get_default:
+ *
+ * Returns new ref to default loader or creates new loader if no default.
+ *
+ * Returns: (transfer full): #CmkIconLoader. Free with g_object_unref.
+ */
 CmkIconLoader * cmk_icon_loader_get_default(void);
 
-/*
+/**
+ * cmk_icon_loader_set_scale:
+ *
  * Sets the current GUI scale. This is used by cmk_icon_loader_lookup
  * for getting a scale. If 0 is passed for the scale, dconf will be
  * used (monitoring /org/gnome/desktop/interface/scaling-factor) to
@@ -29,7 +45,9 @@ CmkIconLoader * cmk_icon_loader_get_default(void);
 void cmk_icon_loader_set_scale(CmkIconLoader *loader, guint scale);
 guint cmk_icon_loader_get_scale(CmkIconLoader *loader);
 
-/*
+/**
+ * cmk_icon_loader_set_default_theme:
+ *
  * Set the default theme. If NULL is passed for theme, dconf will be
  * used (monitoring /org/gnome/desktop/interface/icon-theme) to get
  * the default theme. By default, CmkIconLoader uses the dconf setting.
@@ -39,39 +57,43 @@ guint cmk_icon_loader_get_scale(CmkIconLoader *loader);
 void cmk_icon_loader_set_default_theme(CmkIconLoader *loader, const gchar *theme);
 const gchar * cmk_icon_loader_get_default_theme(CmkIconLoader *loader);
 
-/*
- * Set the value returned by get_default_theme. If NUjj
- */
-
-/*
+/**
+ * cmk_icon_loader_lookup:
+ *
  * Lookup an icon's file path using the current default icon theme.
  * Equivelent to calling
  * cmk_icon_loader_lookup_full(loader, name, FALSE, NULL, TRUE, size, [get_scale]);
  */
 gchar * cmk_icon_loader_lookup(CmkIconLoader *loader, const gchar *name, guint size);
 
-/*
- * Looks up an icon's file path.
- * name: Icon's name.
- * useFallbackNames: If the icon is not found, attempt to shorten the name
+/**
+ * cmk_icon_loader_lookup_full:
+ * @self: A #CmkIconLoader
+ * @name: Icon's name.
+ * @useFallbackNames: If the icon is not found, attempt to shorten the name
  *          at hyphens and try again. For example, if the requested icon is
  *          'printer-remote', and it isn't found, this function will then
- *          try 'printer' before giving up and returning NULL.
- * theme: Theme name to use, or NULL to use the current default theme.
- * useFallbackTheme: If the icon is not found in the given theme, try its
- *			fallbacks in order down to hicolor.
- * size: Icon size in pixels. (ie. size=32 looks for a 32x32 sized icon)
+ *          try 'printer' before giving up and returning %NULL.
+ * @theme: Theme name to use, or %NULL to use the current default theme.
+ * @useFallbackTheme: If the icon is not found in the given theme, try its
+ *          fallbacks in order down to hicolor.
+ * @size: Icon size in pixels. (ie. size=32 looks for a 32x32 sized icon)
  *       If the exact size requested isn't found, the lookup may find an
  *       icon which can be scaled to the requested size instead.
- * scale: The current GUI scale. This is probably a DE-global value.
- * 		  The icon size passed to 'size' must NOT be affected by this scale.
- * Returns NULL if the icon could not be found with the given options.
+ * @scale: The current GUI scale. This is probably a DE-global value.
+ *        The icon size passed to 'size' must NOT be affected by this scale.
+ *
+ * Looks up an icon's file path.
+ *
+ * Returns: %NULL if the icon could not be found with the given options.
  * Free the returned string with g_free.
  */
 gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboolean useFallbackNames, const gchar *theme, gboolean useFallbackTheme, guint size, guint scale);
 
-/*
- * Loads the icon. Set cache to TRUE if this icon is to be loaded often.
+/**
+ * cmk_icon_loader_load:
+ *
+ * Loads the icon. Set cache to %TRUE if this icon is to be loaded often.
  * If the icon is not inherently scalable (ex SVG), it will not be scaled to
  * match the given size. The returned surface's size should always be checked
  * with cairo_image_surface_check_width/height, and be scaled if necessary.
@@ -79,7 +101,9 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
  */
 cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *loader, const gchar *path, guint size, guint scale, gboolean cache);
 
-/*
+/**
+ * cmk_icon_loader_get:
+ *
  * Shorthand for calling lookup and load.
  */
 cairo_surface_t * cmk_icon_loader_get(CmkIconLoader *loader, const gchar *name, guint size);

@@ -93,11 +93,18 @@ static void cmk_button_class_init(CmkButtonClass *class)
 
 	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 
-	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", "", G_PARAM_READWRITE);
-	properties[PROP_TYPE] = g_param_spec_int("type", "type", "rect, beveled, circle", CMK_BUTTON_TYPE_RECT, CMK_BUTTON_TYPE_CIRCLE, CMK_BUTTON_TYPE_RECT, G_PARAM_READWRITE);
+	properties[PROP_TEXT] = g_param_spec_string("text", "text", "The button's text label", "", G_PARAM_READWRITE);
+	properties[PROP_TYPE] = g_param_spec_int("type", "type", "CmkButtonType value of this button", CMK_BUTTON_TYPE_RECT, CMK_BUTTON_TYPE_CIRCLE, CMK_BUTTON_TYPE_RECT, G_PARAM_READWRITE);
 	
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
+	/**
+	 * CmkButton::activate:
+	 * @self: The button being activated
+	 *
+	 * Emitted when the user presses and releases a mouse button. CmkButton
+	 * does not yet distinguish between left/right/other clicks.
+	 */
 	signals[SIGNAL_ACTIVATE] = g_signal_new("activate", G_TYPE_FROM_CLASS(class), G_SIGNAL_RUN_FIRST, G_STRUCT_OFFSET(CmkButtonClass, activate), NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 

@@ -16,19 +16,49 @@ G_DECLARE_DERIVABLE_TYPE(CmkScrollBox, cmk_scroll_box, CMK, SCROLL_BOX, CmkWidge
 
 typedef struct _CmkScrollBoxClass CmkScrollBoxClass;
 
+/**
+ * SECTION:cmk-scroll-box
+ * @TITLE: CmkScrollBox
+ * @SHORT_DESCRIPTION: A scrolling viewport widget
+ *
+ * A replacement for #ClutterScrollActor. This widget uses keyboard/mouse
+ * input to scroll its content (child actors) vertically and/or horizontally,
+ * and will automatically stop when it reaches the edge of the content.
+ *
+ * This container has other visual effects such as dropshadow when scrolling
+ * and scroll bars.
+ *
+ * TODO: Make scroll bars draggable with mouse.
+ */
+
 struct _CmkScrollBoxClass
 {
+	/*< private >*/
 	CmkWidgetClass parentClass;
 };
 
+/**
+ * cmk_scroll_box_new:
+ *
+ * Creates a #CmkScrollBox actor which can scroll vertically,
+ * horizontally, or both.
+ */
 CmkScrollBox * cmk_scroll_box_new(ClutterScrollMode scrollMode);
 
-/*
+/**
+ * cmk_scroll_box_set_show_scrollbars:
+ *
  * Enable or disable scrollbars. Default enabled.
  */
 void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *box, gboolean show);
 
-/*
+/**
+ * cmk_scroll_box_set_use_shadow:
+ * @l: Shadow on inner left edge
+ * @r: Shadow on inner right edge
+ * @t: Shadow on inner top edge
+ * @b: Shadow on inner bottom edge
+ *
  * Set whether to use an inner shadow on each of the given edges
  * to represent scrolling. Shadow is only shown when not scrolled
  * all the way to that edge.

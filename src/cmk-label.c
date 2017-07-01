@@ -11,7 +11,7 @@ struct _CmkLabelPrivate
 {
 	guint settingsChangedId;
 	ClutterText *text;
-	gfloat size, scale;
+	gfloat size;
 };
 
 enum
@@ -19,7 +19,6 @@ enum
 	PROP_TEXT = 1,
 	PROP_SIZE,
 	PROP_BOLD,
-	PROP_SCALE,
 	PROP_LAST
 };
 
@@ -47,9 +46,9 @@ CmkLabel * cmk_label_new_with_text(const gchar *text)
 	return CMK_LABEL(g_object_new(CMK_TYPE_LABEL, "text", text, NULL));
 }
 
-CmkLabel * cmk_label_new_full(const gchar *text, gfloat scale, gboolean bold)
+CmkLabel * cmk_label_new_full(const gchar *text, gboolean bold)
 {
-	return CMK_LABEL(g_object_new(CMK_TYPE_LABEL, "text", text, "scale", scale, "bold", bold, NULL));
+	return CMK_LABEL(g_object_new(CMK_TYPE_LABEL, "text", text, "bold", bold, NULL));
 }
 
 static void cmk_label_class_init(CmkLabelClass *class)
@@ -68,7 +67,6 @@ static void cmk_label_class_init(CmkLabelClass *class)
 
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", NULL, G_PARAM_READWRITE);
 	properties[PROP_SIZE] = g_param_spec_float("size", "size", "size in pt", -1, G_MAXFLOAT, -1, G_PARAM_READWRITE | G_PARAM_CONSTRUCT);
-	properties[PROP_SCALE] = g_param_spec_float("scale", "scale", "scale", 0, G_MAXFLOAT, 1, G_PARAM_READWRITE);
 	properties[PROP_BOLD] = g_param_spec_boolean("bold", "bold", "bold", FALSE, G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
@@ -76,9 +74,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 
 static void cmk_label_init(CmkLabel *self)
 {
-	g_message("label: %p", self);
 	CmkLabelPrivate *private = PRIVATE(self);
-	private->scale = 1;
 	
 	private->text = CLUTTER_TEXT(clutter_text_new());
 	clutter_text_set_line_wrap(private->text, TRUE);
@@ -118,9 +114,6 @@ static void cmk_label_set_property(GObject *self_, guint propertyId, const GValu
 	case PROP_SIZE:
 		cmk_label_set_font_size_pt(self, g_value_get_float(value));
 		break;
-	case PROP_SCALE:
-		cmk_label_set_font_scale(self, g_value_get_float(value));
-		break;
 	case PROP_BOLD:
 		cmk_label_set_bold(self, g_value_get_boolean(value));
 		break;
@@ -142,9 +135,6 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 		break;
 	case PROP_SIZE:
 		g_value_set_float(value, cmk_label_get_font_size_pt(self));
-		break;
-	case PROP_SCALE:
-		g_value_set_float(value, cmk_label_get_font_scale(self));
 		break;
 	case PROP_BOLD:
 		g_value_set_boolean(value, cmk_label_get_bold(self));
@@ -218,7 +208,7 @@ void cmk_label_set_font_size_pt(CmkLabel *self, gfloat size)
 		pango_font_description_free(desc);
 	}
 
-	double abs = size * (96.0/72.0) * PRIVATE(self)->scale * cmk_widget_get_dp_scale(CMK_WIDGET(self)); 
+	double abs = size * (96.0/72.0) * cmk_widget_get_dp_scale(CMK_WIDGET(self)); 
 
 	// Get the current font description instead of using private->desc,
 	// because it may have been modified by the user
@@ -232,19 +222,6 @@ gfloat cmk_label_get_font_size_pt(CmkLabel *self)
 {
 	g_return_val_if_fail(CMK_IS_LABEL(self), 0);
 	return PRIVATE(self)->size;
-}
-
-void cmk_label_set_font_scale(CmkLabel *self, gfloat fontScale)
-{
-	g_return_if_fail(CMK_IS_LABEL(self));
-	PRIVATE(self)->scale = fontScale;
-	cmk_label_set_font_size_pt(self, PRIVATE(self)->size);
-}
-
-gfloat cmk_label_get_font_scale(CmkLabel *self)
-{
-	g_return_val_if_fail(CMK_IS_LABEL(self), 0);
-	return PRIVATE(self)->scale;
 }
 
 void cmk_label_set_bold(CmkLabel *self, gboolean bold)

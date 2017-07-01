@@ -4,6 +4,14 @@
  * Licensed under the Apache License 2 <www.apache.org/licenses/LICENSE-2.0>.
  */
 
+/**
+ * SECTION:cmk-shadow
+ * @TITLE: CmkShadow
+ * @SHORT_DESCRIPTION: Methods for rendering shadows on widgets.
+ *
+ * TODO: Better documentation plz
+ */
+
 #ifndef __CMK_SHADOW_H__
 #define __CMK_SHADOW_H__
 
@@ -28,49 +36,67 @@ typedef enum
 	CMK_SHADOW_MODE_INNER,
 } CmkShadowMode;
 
-/*
+/**
+ * cmk_shadoutil_new:
+ *
  * Use one of these per actor that needs a shadow.
  */
 CmkShadoutil * cmk_shadoutil_new(void);
 
-/*
+/**
+ * cmk_shadoutil_set_mode:
+ *
  * Set shadow mode
  */
 void cmk_shadoutil_set_mode(CmkShadoutil *shadoutil, CmkShadowMode mode);
 
-/*
+/**
+ * cmk_shadoutil_get_mode:
+ *
  * Get shadow mode
  */
 CmkShadowMode cmk_shadoutil_get_mode(CmkShadoutil *shadoutil);
 
-/*
- * Sets the maximum shadow size. See cmk_shadoutil_set_edgues.
+/**
+ * cmk_shadoutil_set_size:
+ *
+ * Sets the maximum shadow size. See cmk_shadoutil_set_edgues().
  */
 void cmk_shadoutil_set_size(CmkShadoutil *shadoutil, guint size);
 
-/*
+/**
+ * cmk_shadoutil_get_size:
+ *
  * Gets the shadow size.
  */
 guint cmk_shadoutil_get_size(CmkShadoutil *shadoutil);
 
-/*
+/**
+ * cmk_shadoutil_set_edges:
+ *
  * Sets the amount of shadow on each edge, as a percentage [0,1] of
  * the maximum. This can be used for shadow animations.
  */
 void cmk_shadoutil_set_edges(CmkShadoutil *shadoutil, gfloat l, gfloat r, gfloat t, gfloat b);
 
-/*
+/**
+ * cmk_shadoutil_get_edges:
+ *
  * Get shadow edge percentages.
  */
 void cmk_shadoutil_get_edges(CmkShadoutil *shadoutil, gfloat *l, gfloat *r, gfloat *t, gfloat *b);
 
-/*
+/**
+ * cmk_shadoutil_set_actor:
+ *
  * The set actor will be automatically queued for a repaint whenever this
  * shadoutil is invalidated.
  */
 void cmk_shadoutil_set_actor(CmkShadoutil *shadoutil, ClutterActor *actor);
 
-/*
+/**
+ * cmk_shadoutil_paint:
+ *
  * Call this in Clutter's 'paint' actor class handler.
  * Call before chaining to parent handler to paint a drop shadow,
  * and after to paint an inner shadow.

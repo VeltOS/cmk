@@ -22,6 +22,10 @@ Download/clone this repo and run
     sudo make install
 ```
 
+GtkDoc documentation is available if you have the gtk-doc package
+installed and you run 'make documentation'. Open the cmkdoc/html/index.html
+file in a browser.
+
 Wayland
 --------
 

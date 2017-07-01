@@ -84,6 +84,15 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	class->styles_changed = on_styles_changed;
 	class->key_focus_changed = on_key_focus_changed;
 	
+	/**
+	 * CmkWidget:style-parent:
+	 *
+	 * The current widget used for inheriting styles.
+	 *
+	 * Getting this property returns only the manually set value; if the
+	 * active style parent is automatically determined, this gets NULL.
+	 * Use cmk_widget_get_style_parent() to get the inherited value.
+	 */
 	properties[PROP_STYLE_PARENT] =
 		g_param_spec_object("style-parent",
 		                    "Style Parent",
@@ -91,10 +100,14 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                    CMK_TYPE_WIDGET,
 		                    G_PARAM_READWRITE);
 
-	/*
-	 * Setting this property directly calls the setter function, but getting
-	 * retrieves the value set by calling the setter function without
-	 * inheriting values from the style parent.
+	/**
+	 * CmkWidget:background-color-name:
+	 *
+	 * Named color to use to draw the widget's background.
+	 *
+	 * Getting this property returns only the manually set value; if the
+	 * current background name is inherited, this gets NULL. Use
+	 * cmk_widget_get_background_color() to get the inherited value.
 	 */
 	properties[PROP_BACKGROUND_COLOR_NAME] =
 		g_param_spec_string("background-color-name",
@@ -103,6 +116,13 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                    NULL,
 		                    G_PARAM_READWRITE);
 
+	/**
+	 * CmkWidget:draw-background:
+	 *
+	 * Whether or not #CmkWidget should automatically draw the background
+	 * color set with cmk_widget_set_background_color(). If this is FALSE, the
+	 * color should be drawn by someone else (namely a subclass of #CmkWidget)
+	 */
 	properties[PROP_DRAW_BACKGROUND] =
 		g_param_spec_boolean("draw-background",
 		                     "Draw Background",
@@ -110,10 +130,15 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                     FALSE,
 		                     G_PARAM_READWRITE);
 
-	/*
-	 * Setting this property directly calls the setter function, but getting
-	 * retrieves the value set by calling the setter function without
-	 * inheriting values from the style parent.
+	/**
+	 * CmkWidget:dp-scale:
+	 *
+	 * Number of pixels per 1 dp.
+	 *
+	 * Getting this value returns only the manually set value on this widget;
+	 * that is, if the inherited dp scale is 2, but the value is only 1 on
+	 * this widget, this returns 1. Use cmk_widget_get_dp_scale() to get the
+	 * inherited value.
 	 */
 	properties[PROP_DP_SCALE] =
 		g_param_spec_float("dp-scale",
@@ -124,10 +149,14 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                   1,
 		                   G_PARAM_READWRITE);
 
-	/*
-	 * Setting this property directly calls the setter function, but getting
-	 * retrieves the value set by calling the setter function without
-	 * inheriting values from the style parent.
+	/**
+	 * CmkWidget:padding-multiplier:
+	 *
+	 * Scale to apply to the widget's padding, if applicable.
+	 *
+	 * Getting this value returns only the manually set value on this widget;
+	 * if the padding multiplier is inherited, this returns -1. Use
+	 * cmk_widget_get_padding_multiplier() to get the inherited value.
 	 */
 	properties[PROP_PADDING_MULTIPLIER] =
 		g_param_spec_float("padding-multiplier",
@@ -138,10 +167,14 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                   1,
 		                   G_PARAM_READWRITE);
 
-	/*
-	 * Setting this property directly calls the setter function, but getting
-	 * retrieves the value set by calling the setter function without
-	 * inheriting values from the style parent.
+	/**
+	 * CmkWidget:bevel-radius-multiplier:
+	 *
+	 * Scale to apply to the widget's bevel radius, if applicable.
+	 *
+	 * Getting this value returns only the manually set value on this widget;
+	 * if the bevel radius is inherited, this returns -1. Use
+	 * cmk_widget_get_bevel_radius_multiplier() to get the inherited value.
 	 */
 	properties[PROP_BEVEL_RADIUS_MULTIPLIER] =
 		g_param_spec_float("bevel-radius-multiplier",
@@ -153,14 +186,30 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                   G_PARAM_READWRITE);
 
 	properties[PROP_TABBABLE] =
-		g_param_spec_string("tabbable",
-		                    "Tabbable",
-		                    "TRUE if this widget can be tabbed to",
-		                    FALSE,
-		                    G_PARAM_READWRITE);
+		g_param_spec_boolean("tabbable",
+		                     "Tabbable",
+		                     "TRUE if this widget can be tabbed to",
+		                     FALSE,
+		                     G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
+	/**
+	 * CmkWidget::styles-changed:
+	 * @self: The widget on which styles changed
+	 * @flags: A set of #CmkStyleFlag indicating which style(s)
+	 * have changed. 
+	 *
+	 * This signal is emitted when style properties are updated on this
+	 * widget or any parent widgets. CmkWidget subclasses should use this
+	 * as an indicator to invalidate ClutterCanvases or update colors.
+	 * When overriding this signal's class handler, chain up to the
+	 * parent class BEFORE updating your widget.
+	 * 
+	 * Changes to the dp and padding properties automatically queue
+	 * relayouts, which in turn queue redraws, so you may not need to
+	 * manually update anything when those properties change.
+	 */
 	signals[SIGNAL_STYLES_CHANGED] =
 		g_signal_new("styles-changed",
 		             G_TYPE_FROM_CLASS(class),
@@ -170,6 +219,13 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		             G_TYPE_NONE,
 		             1, G_TYPE_UINT);
 
+	/**
+	 * CmkWidget::key_focus_changed:
+	 * @newfocus: The widget which just gained keyboard focus
+	 *
+	 * Emitted when a #CmkWidget in the actor heirarchy below this widget
+	 * gains key focus.
+	 */
 	signals[SIGNAL_KEY_FOCUS_CHANGED] =
 		g_signal_new("key-focus-changed",
 		             G_TYPE_FROM_CLASS(class),
@@ -179,6 +235,18 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		             G_TYPE_NONE,
 		             1, CLUTTER_TYPE_ACTOR);
 
+	/**
+	 * CmkWidget::replace:
+	 * @self: Widget being replaced
+	 * @replacement: The widget replacing @self
+	 *
+	 * Emitted by widget subclasses when the parent widget should replace
+	 * them with a new widget. It is up to the parent widget to honor this.
+	 * (This can also be used as a general 'forward' signal, with replacement
+	 * being %NULL and the parent having a planned list of screens.)
+	 *
+	 * Use cmk_widget_replace() to conveniently emit this signal.
+	 */
 	signals[SIGNAL_REPLACE] =
 		g_signal_new("replace",
 		             G_TYPE_FROM_CLASS(class),
@@ -188,6 +256,16 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		             G_TYPE_NONE,
 		             1, CMK_TYPE_WIDGET);
 
+	/**
+	 * CmkWidget::back:
+	 * @self: Widget being replaced
+	 *
+	 * Emitted by widget subclasses when the parent should remove this widget
+	 * and return to the previously shown widget (opposite of 'replace').
+	 * It is up to the parent widget to honor this.
+	 *
+	 * Use cmk_widget_back() to conveniently emit this signal.
+	 */
 	signals[SIGNAL_BACK] =
 		g_signal_new("back",
 		             G_TYPE_FROM_CLASS(class),
@@ -204,8 +282,8 @@ static void cmk_widget_init(CmkWidget *self)
 
 	private->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)clutter_color_free);
 	private->dpScale = 1;
-	private->paddingMultiplier = 1;
-	private->bevelRadiusMultiplier = 1;
+	private->paddingMultiplier = -1;
+	private->bevelRadiusMultiplier = -1;
 	private->mLeft = private->mRight = private->mTop = private->mBottom = -1;
 }
 
@@ -261,7 +339,7 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 	switch(propertyId)
 	{
 	case PROP_STYLE_PARENT:
-		g_value_set_object(value, PRIVATE(self)->actualStyleParent);
+		g_value_set_object(value, PRIVATE(self)->styleParent);
 		break;
 	case PROP_BACKGROUND_COLOR_NAME:
 		g_value_set_string(value, PRIVATE(self)->backgroundColorName);
@@ -333,10 +411,7 @@ static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self_));
 	if((CmkWidget *)prevParent == PRIVATE(CMK_WIDGET(self_))->actualStyleParent)
-	{
 		update_actual_style_parent(CMK_WIDGET(self_));
-		g_message("parent changed %p, %p, %p", self_, prevParent, PRIVATE(CMK_WIDGET(self_))->actualStyleParent);
-	}
 }
 
 static void update_actual_style_parent(CmkWidget *self)

@@ -38,6 +38,22 @@ target_include_directories(cmk PRIVATE
 	${LIBRSVG_INCLUDE_DIRS}
 )
 
+find_package(GtkDoc 1.25)
+if(GTKDOC_FOUND)
+	gtk_doc_add_module(cmkdoc
+		SOURCE ${CMAKE_SOURCE_DIR}/src
+		LIBRARIES cmk
+		# GtkDoc cmake package only does header files by default
+		# Need to scan source files for signal documentation
+		SUFFIXES "h,c"
+		DEPENDS cmk
+	)
+	
+	add_custom_target(documentation DEPENDS doc-cmkdoc)
+	# Install not needed right now
+	#install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cmkdoc/html DESTINATION share/doc)
+endif(GTKDOC_FOUND)
+
 install(TARGETS cmk DESTINATION lib)
 install(DIRECTORY src/ DESTINATION include/libcmk FILES_MATCHING PATTERN "*.h")
 install(FILES ${PROJECT_BINARY_DIR}/libcmk.pc DESTINATION lib/pkgconfig)
