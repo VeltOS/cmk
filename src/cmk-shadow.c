@@ -2,13 +2,11 @@
  * This file is part of graphene-desktop, the desktop environment of VeltOS.
  * Copyright (C) 2016 Velt Technologies, Aidan Shafran <zelbrium@gmail.com>
  * Licensed under the Apache License 2 <www.apache.org/licenses/LICENSE-2.0>.
- *
- * TODO: cogl.h uses <cogl/..> includes for both the cogl and cogl2 version
- * which means that including cogl2 with clutter doesn't work correctly.
- * Clutter seems to mix both cogl and cogl2 somehow, and this shadow code
- * uses cogl2. Because of the weird includes, many of the cogl2 functions
- * (and some of the Clutter ones??) say implicit declaration.
  */
+
+// Removes implicit declaration warnings
+#define COGL_ENABLE_EXPERIMENTAL_API
+#define CLUTTER_ENABLE_EXPERIMENTAL_API
 
 #include "cmk-shadow.h"
 #include <math.h>

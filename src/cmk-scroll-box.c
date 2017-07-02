@@ -4,12 +4,18 @@
  * Licensed under the Apache License 2 <www.apache.org/licenses/LICENSE-2.0>.
  */
 
+// Removes implicit declaration warnings
+#define COGL_ENABLE_EXPERIMENTAL_API
+#define CLUTTER_ENABLE_EXPERIMENTAL_API
+
 #include "cmk-scroll-box.h"
 #include "cmk-shadow.h"
 
 typedef struct _CmkScrollBoxPrivate CmkScrollBoxPrivate;
 struct _CmkScrollBoxPrivate
 {
+	CoglContext *ctx;
+	CoglPipeline *pipe;
 	ClutterScrollMode scrollMode;
 	ClutterPoint scroll;
 	gfloat natW, natH;
@@ -69,6 +75,14 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 static void cmk_scroll_box_init(CmkScrollBox *self)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(self);
+	private->ctx = clutter_backend_get_cogl_context(clutter_get_default_backend());
+	private->pipe = cogl_pipeline_new(private->ctx);
+	CoglColor *c = cogl_color_new();
+	cogl_color_init_from_4ub(c, 255,255,255,150);
+	cogl_color_premultiply(c);
+	cogl_pipeline_set_color(private->pipe, c);
+	cogl_color_free(c);
+
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
 	clutter_actor_set_clip_to_allocation(CLUTTER_ACTOR(self), TRUE);
 	clutter_point_init(&(PRIVATE(self)->scroll), 0.0f, 0.0f);
@@ -84,6 +98,7 @@ static void cmk_scroll_box_dispose(GObject *self_)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
 	g_clear_object(&private->shadow);
+	g_clear_pointer(&private->pipe, cogl_object_unref);
 	G_OBJECT_CLASS(cmk_scroll_box_parent_class)->dispose(self_);
 }
 
@@ -204,6 +219,21 @@ static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloa
 	ensure_edge_shadow(private->shadow, "bottom", &private->bShad, &private->bShadDraw, hEndPercent-hPercent);
 }
 
+static CoglPrimitive * rect_prim(CoglContext *ctx, float x, float y, float w, float h)
+{
+	CoglVertexP2 verts[6] = {
+		x,     y,
+		x,     y+h,
+		x+w,   y,
+		
+		x+w,   y,
+		x,     y+h,
+		x+w,   y+h,
+	};
+	
+	return cogl_primitive_new_p2(ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
+}
+
 static void on_paint(ClutterActor *self_)
 {
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->paint(self_);
@@ -236,28 +266,31 @@ static void on_paint(ClutterActor *self_)
 	// TODO: Scroll bars fade in and out
 	// TODO: Draggable scroll bars
 	
+	CoglFramebuffer *fb = cogl_get_draw_framebuffer();
+	
 	if(private->natH > height)
 	{
-		// TODO: Non-depricated drawing API
 		// TODO: Stylable colors
-		//cogl_set_source_color4ub(0,0,0,100);
-		//cogl_rectangle(width - size-6,
-		//               hPercent * height-4,
-		//               width,
-		//               hPercent * height + hBarSize + 4);
-		cogl_set_source_color4ub(255,255,255,150);
-		cogl_rectangle(width - size - size/2,
-		               hPercent * height,
-		               width- size/2,
-		               hPercent * height + hBarSize);
+
+		CoglPrimitive *p = 
+			rect_prim(private->ctx,
+			          width - size - size/2,
+			          hPercent * height,
+			          width- size/2,
+			          hPercent * height + hBarSize);
+		cogl_primitive_draw(p, fb, private->pipe);
+		cogl_object_unref(p);
 	}
 	if(private->natW > width)
 	{
-		cogl_set_source_color4ub(255,255,255,150);
-		cogl_rectangle(wPercent * width,
-		               height - size,
-		               wPercent * width + wBarSize,
-		               height);
+		CoglPrimitive *p = 
+			rect_prim(private->ctx,
+			          wPercent * width,
+			          height - size,
+			          wPercent * width + wBarSize,
+			          height);
+		cogl_primitive_draw(p, fb, private->pipe);
+		cogl_object_unref(p);
 	}
 }
 
