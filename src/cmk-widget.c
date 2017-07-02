@@ -281,7 +281,7 @@ static void cmk_widget_init(CmkWidget *self)
 	CmkWidgetPrivate *private = PRIVATE(self);
 
 	private->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)clutter_color_free);
-	private->dpScale = 1;
+	private->dpScale = private->dpScaleCache = 1;
 	private->paddingMultiplier = -1;
 	private->bevelRadiusMultiplier = -1;
 	private->mLeft = private->mRight = private->mTop = private->mBottom = -1;

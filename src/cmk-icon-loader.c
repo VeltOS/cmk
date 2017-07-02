@@ -572,8 +572,33 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 	return NULL;
 }
 
-static cairo_surface_t * load_svg(const gchar *path, guint size)
+static GHashTable *loadCache = NULL;
+
+static cairo_surface_t * get_cached_surface(const gchar *path)
 {
+	if(!loadCache)
+		return NULL;
+	cairo_surface_t *surface = g_hash_table_lookup(loadCache, path);
+	if(!surface)
+		return NULL;
+	return cairo_surface_reference(surface);
+}
+
+static void cache_surface(const gchar *path, cairo_surface_t *surface)
+{
+	if(!loadCache)
+	{
+		loadCache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)cairo_surface_destroy);
+	}
+
+	g_hash_table_insert(loadCache, g_strdup(path), cairo_surface_reference(surface));
+}
+
+static cairo_surface_t * load_svg(const gchar *path, guint size, gboolean cache)
+{
+	cairo_surface_t *cached = get_cached_surface(path);
+	if(cached) return cached;
+
 	RsvgHandle *handle = rsvg_handle_new_from_file(path, NULL);
 	if(!handle)
 		return NULL;
@@ -602,15 +627,34 @@ static cairo_surface_t * load_svg(const gchar *path, guint size)
 	g_object_unref(handle);
 	if(!r)
 		g_clear_pointer(&surface, cairo_surface_destroy);
+	if(cache)
+		cache_surface(path, surface);
 	return surface;
 }
 
-static cairo_surface_t * load_png(const gchar *path, guint size)
+
+static cairo_surface_t * load_png(const gchar *path, guint size, gboolean cache)
 {
+	cairo_surface_t *cached = get_cached_surface(path);
+	if(cached) return cached;
+	
 	// TODO: Scale surface to size
+	// TODO: Cairo uses libpng to load the png files. It is extremely slow,
+	// over 11ms for a 192x192 pixel image. It's almost entirely from libpng;
+	// creating a cairo image surface and copying the data over is relatively
+	// fast. I tried a few different libpng image loaders for speed tests,
+	// and they were all the same speed. (https://mathematica.stackexchange.com/questions/104688/fast-loading-of-png-files is good)
+	// Is there any way to speed this up?
+	
 	cairo_surface_t *surface = cairo_image_surface_create_from_png(path);
 	if(cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
-		g_clear_pointer(&surface, cairo_surface_destroy);
+	{
+		cairo_surface_destroy(surface);
+		return NULL;
+	}
+	
+	if(cache)
+		cache_surface(path, surface);
 	return surface;
 }
 
@@ -623,9 +667,9 @@ cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *self, const gchar *path, g
 
 	cairo_surface_t *surface = NULL;
 	if(g_str_has_suffix(path, ".svg"))
-		surface = load_svg(path, size);
+		surface = load_svg(path, size, cache);
 	else if(g_str_has_suffix(path, ".png"))
-		surface = load_png(path, size);
+		surface = load_png(path, size, cache);
 	
 	// TODO: Support other image types
 	return surface;
