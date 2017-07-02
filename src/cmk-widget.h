@@ -56,7 +56,7 @@ G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
  * Converts dps to pixels. This should be used when drawing raw pixels to
  * a canvas or when allocating child widgets.
  */
-#define CMK_DP(widget, dps) (cmk_widget_style_get_dp_scale(widget)*dps)
+#define CMK_DP(widget, dps) (cmk_widget_get_dp_scale((CmkWidget *)(widget))*(dps))
 
 /**
  * CmkStyleFlag:

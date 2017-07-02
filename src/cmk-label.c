@@ -148,22 +148,16 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 static void cmk_label_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	clutter_actor_get_preferred_width(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), forHeight, minWidth, natWidth);
-	// TODO
-	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 }
 
 static void cmk_label_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	clutter_actor_get_preferred_height(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), forWidth, minHeight, natHeight);
-	// TODO
-	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 }
 
 static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
 {
 	cmk_label_set_font_size_pt(CMK_LABEL(self_), PRIVATE(CMK_LABEL(self_))->size);
-	// TODO
-	gfloat padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
 	ClutterActorBox text = {0, 0, box->x2 - box->x1, box->y2 - box->y1};
 	clutter_actor_allocate(CLUTTER_ACTOR(PRIVATE(CMK_LABEL(self_))->text), &text, flags);
 	CLUTTER_ACTOR_CLASS(cmk_label_parent_class)->allocate(self_, box, flags);

@@ -183,12 +183,17 @@ static void cmk_button_get_property(GObject *self_, guint propertyId, GValue *va
 	}
 }
 
+// Based on Material design spec
+#define WIDTH_PADDING 16 // dp
+#define HEIGHT_PADDING 9 // dp
+#define BEVEL_RADIUS 2 // dp
+
 static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	*minWidth = 0;
-	// TODO
-	float padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	float padMul = cmk_widget_get_padding_multiplier(CMK_WIDGET(self_));
+	float wPad = CMK_DP(self_, WIDTH_PADDING) * padMul;
 
 	if(private->content)
 	{
@@ -198,7 +203,7 @@ static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight
 	}
 	
 	if(private->content && private->text)
-		*minWidth += padding;
+		*minWidth += wPad;
 
 	if(private->text)
 	{
@@ -207,7 +212,7 @@ static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight
 		*minWidth += nat;
 	}
 
-	*minWidth += (padding*2);
+	*minWidth += (wPad*2);
 	*natWidth = *minWidth;
 }
 
@@ -215,8 +220,8 @@ static void cmk_button_get_preferred_height(ClutterActor *self_, gfloat forWidth
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	*minHeight = 0;
-	// TODO
-	float padding = 20;//cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	float padMul = cmk_widget_get_padding_multiplier(CMK_WIDGET(self_));
+	float hPad = CMK_DP(self_, HEIGHT_PADDING) * padMul;
 	
 	if(private->content)
 	{
@@ -232,7 +237,7 @@ static void cmk_button_get_preferred_height(ClutterActor *self_, gfloat forWidth
 		*minHeight = MAX(nat, *minHeight);
 	}
 
-	*minHeight += (padding*2);
+	*minHeight += (hPad*2);
 	*natHeight = *minHeight;
 }
 
@@ -265,15 +270,17 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 		return;
 	}
 
-	// TODO
-	float padding = 20; // cmk_widget_style_get_padding(CMK_WIDGET(self_));
+	float dp = cmk_widget_get_dp_scale(CMK_WIDGET(self_));
+	float padMul = cmk_widget_get_padding_multiplier(CMK_WIDGET(self_));
+	float wPadding = WIDTH_PADDING * dp * padMul;
+	float hPadding = HEIGHT_PADDING * dp * padMul;
 	
 	gfloat minHeight, natHeight, minWidth, natWidth;
 	clutter_actor_get_preferred_height(self_, -1, &minHeight, &natHeight);
 	clutter_actor_get_preferred_width(self_, -1, &minWidth, &natWidth);
 
-	gfloat hPad = MIN(MAX((maxHeight - (minHeight-(padding*2)))/2, 0), padding);
-	gfloat wPad = MIN(MAX((maxWidth - (minWidth-(padding*2)))/2, 0), padding);
+	gfloat hPad = MIN(MAX((maxHeight - (minHeight-(hPadding*2)))/2, 0), hPadding);
+	gfloat wPad = MIN(MAX((maxWidth - (minWidth-(wPadding*2)))/2, 0), wPadding);
 	hPad = (gint)hPad;
 	wPad = (gint)wPad;
 
@@ -371,8 +378,7 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 		double degrees = M_PI / 180.0;
 
 		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
-			// TODO
-			radius = 5;// cmk_widget_style_get_bevel_radius(CMK_WIDGET(self));
+			radius = CMK_DP(self, BEVEL_RADIUS) * cmk_widget_get_bevel_radius_multiplier(CMK_WIDGET(self));
 		else
 			radius = MIN(width, height)/2;
 
