@@ -2,6 +2,31 @@
  * This file is part of graphene-desktop, the desktop environment of VeltOS.
  * Copyright (C) 2016 Velt Technologies, Aidan Shafran <zelbrium@gmail.com>
  * Licensed under the Apache License 2 <www.apache.org/licenses/LICENSE-2.0>.
+ *
+ * Styling properties are inherited through the styles-changed singal.
+ *
+ * When a widget is attached to a style parent (in update_actual_style_parent)
+ * either automatically from its real parent or manually by calling
+ * cmk_widget_set_style_parent(), a signal listener is attached to the style
+ * parent's style-changed signal.
+ *
+ * This signal triggers on_style_parent_property_changed(), which checks
+ * if the changed properties would affect child widgets, and if so, re-emits
+ * the signal on self.
+ *
+ * To make loading faster, properties are not propagated if a widget is
+ * not attached to a stage. This is so that you can create a widget subclass
+ * which has its own child widgets, and then attach it to the stage, without
+ * those child widgets receiving styles-changed twice (once on attaching
+ * to their parent, and again on their parent attaching to the stage).
+ * Only when a widget is attached to the stage do its children start
+ * propagating style events. See on_parent_changed() for more info on
+ * checking for stage attachment.
+ *
+ * This means that styles_changed will only be called by changes to the
+ * own widget's style before it's attached to the stage. Your widget
+ * subclasses should always be prepared for the style to change and update
+ * accordingly.
  */
 
 #include "cmk-widget.h"
@@ -22,6 +47,7 @@ struct _CmkWidgetPrivate
 	gboolean tabbable;
 
 	gboolean disposed; // Various callbacks (ex clutter canvas draws) like to emit even after their actor has been disposed. This is checked to avoid runtime "CRITICAL" messages on disposed objects (and unnecessary processing)
+	gboolean debug;
 };
 
 enum
@@ -54,13 +80,14 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent);
 static void update_style_properties(CmkWidget *self, guint flags);
 static void on_styles_changed(CmkWidget *self, guint flags);
-static void update_actual_style_parent(CmkWidget *self);
+static gboolean update_actual_style_parent(CmkWidget *self);
 static void update_background_color(CmkWidget *self);
 static void update_dp_cache(CmkWidget *self);
 static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 //static void update_named_background_color(CmkWidget *self);
 static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event);
 static void on_key_focus(ClutterActor *self_);
+#define dmsg(self, fmt...) if(PRIVATE(CMK_WIDGET(self))->debug){g_message("CmkWidget: " fmt);}
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, CLUTTER_TYPE_ACTOR);
 #define PRIVATE(widget) ((CmkWidgetPrivate *)cmk_widget_get_instance_private(widget))
@@ -382,6 +409,13 @@ static void on_style_parent_destroy(CmkWidget *self, CmkWidget *styleParent)
 
 static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 {
+	// Don't bother updating if we're not attached to a stage yet
+	if(!clutter_actor_get_stage(CLUTTER_ACTOR(self)))
+	{
+		dmsg(self, "%p: not propagating because no stage", self);
+		return;
+	}
+	
 	// When an inheritable property changes on the parent, only relay
 	// it to this widget if this widget isn't setting its own value for
 	// the property.
@@ -402,23 +436,34 @@ static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 		if(private->bevelRadiusMultiplier >= 0)
 			flags &= ~CMK_STYLE_FLAG_BEVEL_MUL;
 	}
-
+	
+	dmsg(self, "%p: propagating style changes from parent (%i)", self, flags);
 	if(flags)
 		update_style_properties(self, flags);
 }
 
 static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent)
 {
+	dmsg(self_, "%p: parent changed from %p", self_, prevParent);
 	g_return_if_fail(CMK_IS_WIDGET(self_));
+	gboolean updated = FALSE;
 	if((CmkWidget *)prevParent == PRIVATE(CMK_WIDGET(self_))->actualStyleParent)
-		update_actual_style_parent(CMK_WIDGET(self_));
+		updated = update_actual_style_parent(CMK_WIDGET(self_));
+
+	// Ensure that all properties are updated when a root widget becomes
+	// attached to a stage. Normally, the update_actual_style_parent above
+	// will handle it, except when the root widget's style parent never
+	// gets attached to the stage (when it's a styling-only widget).
+	if(!updated && CLUTTER_IS_STAGE(clutter_actor_get_parent(self_)))
+		on_style_parent_property_changed(CMK_WIDGET(self_), CMK_STYLE_FLAG_ALL);
 }
 
-static void update_actual_style_parent(CmkWidget *self)
+static gboolean update_actual_style_parent(CmkWidget *self)
 {
+	dmsg(self, "%p: maybe updating style parent", self);
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if(G_UNLIKELY(private->disposed))
-		return;
+		return FALSE;
 	
 	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
 
@@ -429,7 +474,8 @@ static void update_actual_style_parent(CmkWidget *self)
 		newStyleParent = CMK_WIDGET(parent);
 	
 	if(newStyleParent == private->actualStyleParent)
-		return;
+		return FALSE;
+	dmsg(self, "%p: updating style parent to %p", self, newStyleParent);
 	
 	if(private->actualStyleParent)
 	{
@@ -447,9 +493,8 @@ static void update_actual_style_parent(CmkWidget *self)
 
 	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_STYLE_PARENT]);
 	
-	// Don't bother updating anything if we're not attached to a stage yet
-	if(clutter_actor_get_stage(CLUTTER_ACTOR(self)))
-		on_style_parent_property_changed(self, CMK_STYLE_FLAG_ALL);
+	on_style_parent_property_changed(self, CMK_STYLE_FLAG_ALL);
+	return TRUE;
 }
 
 void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
@@ -481,6 +526,7 @@ static void update_style_properties(CmkWidget *self, guint flags)
  */
 static void on_styles_changed(CmkWidget *self, guint flags)
 {
+	dmsg(self, "%p: on_styles_changed (%i)", self, flags);
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if((flags & CMK_STYLE_FLAG_BACKGROUND_NAME)
 	|| (flags & CMK_STYLE_FLAG_COLORS))
@@ -1045,4 +1091,21 @@ void cmk_grab(gboolean grab)
 {
 	if(grabHandler)
 		grabHandler(grab, grabHandlerData);
+}
+
+/*
+ * Using regular g_debug or g_message isn't always useful on widgets
+ * because you can't enable it only on specific widgets. If you have
+ * a big scene, that means you'll get LOTS of messages. So, you can
+ * turn on debug messages for a single widget here.
+ */
+void cmk_widget_set_debug(CmkWidget *self, gboolean debug)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	PRIVATE(self)->debug = debug;
+}
+
+gboolean cmk_widget_get_debug(CmkWidget *self)
+{
+	return PRIVATE(self)->debug;
 }
