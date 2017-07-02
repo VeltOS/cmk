@@ -193,7 +193,7 @@ static void cmk_button_get_preferred_width(ClutterActor *self_, gfloat forHeight
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	*minWidth = 0;
 	float padMul = cmk_widget_get_padding_multiplier(CMK_WIDGET(self_));
-	float wPad = CMK_DP(self_, WIDTH_PADDING) * padMul;
+	float wPad = CMK_DP(self_, ((private->content && !private->text) ? HEIGHT_PADDING : WIDTH_PADDING)) * padMul;
 
 	if(private->content)
 	{
@@ -272,7 +272,7 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 
 	float dp = cmk_widget_get_dp_scale(CMK_WIDGET(self_));
 	float padMul = cmk_widget_get_padding_multiplier(CMK_WIDGET(self_));
-	float wPadding = WIDTH_PADDING * dp * padMul;
+	float wPadding = CMK_DP(self_, ((private->content && !private->text) ? HEIGHT_PADDING : WIDTH_PADDING)) * padMul;
 	float hPadding = HEIGHT_PADDING * dp * padMul;
 	
 	gfloat minHeight, natHeight, minWidth, natWidth;
