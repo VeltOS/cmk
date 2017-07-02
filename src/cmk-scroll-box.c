@@ -219,16 +219,16 @@ static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloa
 	ensure_edge_shadow(private->shadow, "bottom", &private->bShad, &private->bShadDraw, hEndPercent-hPercent);
 }
 
-static CoglPrimitive * rect_prim(CoglContext *ctx, float x, float y, float w, float h)
+static CoglPrimitive * rect_prim(CoglContext *ctx, float x1, float y1, float x2, float y2)
 {
 	CoglVertexP2 verts[6] = {
-		x,     y,
-		x,     y+h,
-		x+w,   y,
+		x1,  y1,
+		x1,  y2,
+		x2,  y1,
 		
-		x+w,   y,
-		x,     y+h,
-		x+w,   y+h,
+		x2,  y1,
+		x1,  y2,
+		x2,  y2,
 	};
 	
 	return cogl_primitive_new_p2(ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
