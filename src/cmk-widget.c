@@ -80,14 +80,14 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent);
 static void update_style_properties(CmkWidget *self, guint flags);
 static void on_styles_changed(CmkWidget *self, guint flags);
-static gboolean update_actual_style_parent(CmkWidget *self);
+static void update_actual_style_parent(CmkWidget *self);
 static void update_background_color(CmkWidget *self);
 static void update_dp_cache(CmkWidget *self);
 static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 //static void update_named_background_color(CmkWidget *self);
 static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event);
 static void on_key_focus(ClutterActor *self_);
-#define dmsg(self, fmt...) if(PRIVATE(CMK_WIDGET(self))->debug){g_message("CmkWidget: " fmt);}
+#define dmsg(self, fmt...) if(PRIVATE((CmkWidget *)(self))->debug){g_message("CmkWidget: " fmt);}
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, CLUTTER_TYPE_ACTOR);
 #define PRIVATE(widget) ((CmkWidgetPrivate *)cmk_widget_get_instance_private(widget))
@@ -407,10 +407,27 @@ static void on_style_parent_destroy(CmkWidget *self, CmkWidget *styleParent)
 	update_actual_style_parent(self);
 }
 
+static gboolean using_custom_style_parent(CmkWidgetPrivate *private)
+{
+	if(private->styleParent)
+		return TRUE;
+	else if(private->actualStyleParent)
+		return using_custom_style_parent(PRIVATE(private->actualStyleParent));
+	else
+		return FALSE;
+}
+
 static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 {
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(private->disposed)
+		return;
+	
 	// Don't bother updating if we're not attached to a stage yet
-	if(!clutter_actor_get_stage(CLUTTER_ACTOR(self)))
+	if(!clutter_actor_get_stage(CLUTTER_ACTOR(self))
+	// Except in the case that we have a custom style parent, because
+	// that might never be attached to the stage.
+	&& !using_custom_style_parent(private))
 	{
 		dmsg(self, "%p: not propagating because no stage", self);
 		return;
@@ -420,7 +437,6 @@ static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 	// it to this widget if this widget isn't setting its own value for
 	// the property.
 	// dp and colors can't be overridden like the others, so don't check
-	CmkWidgetPrivate *private = PRIVATE(self);
 	if(flags & CMK_STYLE_FLAG_BACKGROUND_NAME)
 	{
 		if(private->backgroundColorName)
@@ -446,24 +462,16 @@ static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent)
 {
 	dmsg(self_, "%p: parent changed from %p", self_, prevParent);
 	g_return_if_fail(CMK_IS_WIDGET(self_));
-	gboolean updated = FALSE;
 	if((CmkWidget *)prevParent == PRIVATE(CMK_WIDGET(self_))->actualStyleParent)
-		updated = update_actual_style_parent(CMK_WIDGET(self_));
-
-	// Ensure that all properties are updated when a root widget becomes
-	// attached to a stage. Normally, the update_actual_style_parent above
-	// will handle it, except when the root widget's style parent never
-	// gets attached to the stage (when it's a styling-only widget).
-	if(!updated && CLUTTER_IS_STAGE(clutter_actor_get_parent(self_)))
-		on_style_parent_property_changed(CMK_WIDGET(self_), CMK_STYLE_FLAG_ALL);
+		update_actual_style_parent(CMK_WIDGET(self_));
 }
 
-static gboolean update_actual_style_parent(CmkWidget *self)
+static void update_actual_style_parent(CmkWidget *self)
 {
 	dmsg(self, "%p: maybe updating style parent", self);
 	CmkWidgetPrivate *private = PRIVATE(self);
 	if(G_UNLIKELY(private->disposed))
-		return FALSE;
+		return;
 	
 	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
 
@@ -474,7 +482,7 @@ static gboolean update_actual_style_parent(CmkWidget *self)
 		newStyleParent = CMK_WIDGET(parent);
 	
 	if(newStyleParent == private->actualStyleParent)
-		return FALSE;
+		return;
 	dmsg(self, "%p: updating style parent to %p", self, newStyleParent);
 	
 	if(private->actualStyleParent)
@@ -494,7 +502,7 @@ static gboolean update_actual_style_parent(CmkWidget *self)
 	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_STYLE_PARENT]);
 	
 	on_style_parent_property_changed(self, CMK_STYLE_FLAG_ALL);
-	return TRUE;
+	return;
 }
 
 void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
@@ -503,6 +511,7 @@ void cmk_widget_set_style_parent(CmkWidget *self, CmkWidget *parent)
 	// parent can be NULL
 	g_return_if_fail(parent == NULL || CMK_IS_WIDGET(parent));
 	
+	dmsg(self, "%p: setting style parent to %p", self, parent);
 	if(PRIVATE(self)->styleParent == parent)
 		return;
 	PRIVATE(self)->styleParent = parent;
