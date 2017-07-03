@@ -146,9 +146,8 @@ static void on_queue_relayout(ClutterActor *self_)
 {
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->queue_relayout(self_);
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
-	private->natW = private->natH = 0;
-	update_preferred_size(self_);
 	scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
+	private->natW = private->natH = 0;
 }
 
 #define FLOAT_TO_POINTER(f) (void *)*(gsize*)&f
@@ -260,15 +259,14 @@ static void on_paint(ClutterActor *self_)
 	gfloat hBarSize = MIN(1, (height / private->natH)) * height; 
 	gfloat wBarSize = MIN(1, (width / private->natW)) * width; 
 	
-	// TODO: Adjustable sizing + dpi scale
-	const gfloat size = 8;
+	const gfloat size = CMK_DP(self_, 4);
 	
 	// TODO: Scroll bars fade in and out
 	// TODO: Draggable scroll bars
 	
 	CoglFramebuffer *fb = cogl_get_draw_framebuffer();
 	
-	if(private->natH > height)
+	if(private->natH > height && (private->scrollMode & CLUTTER_SCROLL_VERTICALLY))
 	{
 		// TODO: Stylable colors
 
@@ -281,7 +279,7 @@ static void on_paint(ClutterActor *self_)
 		cogl_primitive_draw(p, fb, private->pipe);
 		cogl_object_unref(p);
 	}
-	if(private->natW > width)
+	if(private->natW > width && (private->scrollMode & CLUTTER_SCROLL_HORIZONTALLY))
 	{
 		CoglPrimitive *p = 
 			rect_prim(private->ctx,
@@ -348,6 +346,11 @@ static gboolean on_scroll(ClutterActor *self_, ClutterScrollEvent *event)
 		clutter_event_get_scroll_delta((ClutterEvent *)event, &dx, &dy);
 		dx *= 50; // TODO: Not magic number for multiplier
 		dy *= 50;
+		CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+		if(!(private->scrollMode & CLUTTER_SCROLL_HORIZONTALLY))
+			dx = 0;
+		if(!(private->scrollMode & CLUTTER_SCROLL_VERTICALLY))
+			dy = 0;
 		scroll_by(CMK_SCROLL_BOX(self_), dx, dy);
 	}
 	return CLUTTER_EVENT_STOP;
