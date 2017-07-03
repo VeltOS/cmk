@@ -105,6 +105,16 @@ static void on_paint(ClutterActor *self_)
 		clutter_content_invalidate(CLUTTER_CONTENT(canvas));
 }
 
+static void on_map(ClutterActor *self_)
+{
+	CLUTTER_ACTOR_CLASS(cmk_icon_parent_class)->map(self_);
+	// When adding an icon to an already mapped widget, on_paint doesn't
+	// get called for some reason. TODO: Not sure why. But just calling
+	// paint in the on_map works (only if on_paint doesn't chain up, which
+	// it doesn't here).
+	on_paint(self_);
+}
+
 static void cmk_icon_class_init(CmkIconClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
@@ -116,6 +126,7 @@ static void cmk_icon_class_init(CmkIconClass *class)
 	actorClass->get_preferred_width = get_preferred_width;
 	actorClass->get_preferred_height = get_preferred_height;
 	actorClass->paint = on_paint;
+	actorClass->map = on_map;
 	
 	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 
