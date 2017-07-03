@@ -23,6 +23,7 @@ add_library(cmk SHARED
 	src/cmk-icon-loader.c
 	src/cmk-label.c
 	src/cmk-scroll-box.c
+	src/cmk-separator.c
 	src/cmk-shadow.c
 	src/cmk-util.c
 	src/cmk-widget.c
