@@ -574,29 +574,36 @@ gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboo
 
 static GHashTable *loadCache = NULL;
 
-static cairo_surface_t * get_cached_surface(const gchar *path)
+static cairo_surface_t * get_cached_surface(const gchar *path, guint size)
 {
 	if(!loadCache)
 		return NULL;
-	cairo_surface_t *surface = g_hash_table_lookup(loadCache, path);
+	/*
+	 * Need to include size in cache name, because SVGs have
+	 * the same file path but can be loaded at any size.
+	 */
+	gchar *s = g_strdup_printf("%i:%s", size, path);
+	cairo_surface_t *surface = g_hash_table_lookup(loadCache, s);
+	g_free(s);
 	if(!surface)
 		return NULL;
 	return cairo_surface_reference(surface);
 }
 
-static void cache_surface(const gchar *path, cairo_surface_t *surface)
+static void cache_surface(const gchar *path, guint size, cairo_surface_t *surface)
 {
 	if(!loadCache)
 	{
 		loadCache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)cairo_surface_destroy);
 	}
 
-	g_hash_table_insert(loadCache, g_strdup(path), cairo_surface_reference(surface));
+	gchar *s = g_strdup_printf("%i:%s", size, path);
+	g_hash_table_insert(loadCache, s, cairo_surface_reference(surface));
 }
 
 static cairo_surface_t * load_svg(const gchar *path, guint size, gboolean cache)
 {
-	cairo_surface_t *cached = get_cached_surface(path);
+	cairo_surface_t *cached = get_cached_surface(path, size);
 	if(cached) return cached;
 
 	RsvgHandle *handle = rsvg_handle_new_from_file(path, NULL);
@@ -628,14 +635,14 @@ static cairo_surface_t * load_svg(const gchar *path, guint size, gboolean cache)
 	if(!r)
 		g_clear_pointer(&surface, cairo_surface_destroy);
 	if(cache)
-		cache_surface(path, surface);
+		cache_surface(path, size, surface);
 	return surface;
 }
 
 
 static cairo_surface_t * load_png(const gchar *path, guint size, gboolean cache)
 {
-	cairo_surface_t *cached = get_cached_surface(path);
+	cairo_surface_t *cached = get_cached_surface(path, size);
 	if(cached) return cached;
 	
 	// TODO: Scale surface to size
@@ -654,7 +661,7 @@ static cairo_surface_t * load_png(const gchar *path, guint size, gboolean cache)
 	}
 	
 	if(cache)
-		cache_surface(path, surface);
+		cache_surface(path, size, surface);
 	return surface;
 }
 
