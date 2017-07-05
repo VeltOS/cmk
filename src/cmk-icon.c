@@ -7,6 +7,7 @@
 #include "cmk-icon.h"
 #include "cmk-icon-loader.h"
 #include <math.h>
+#include <string.h>
 
 typedef struct _CmkIconPrivate CmkIconPrivate;
 struct _CmkIconPrivate
@@ -282,9 +283,13 @@ const gchar * cmk_icon_get_icon(CmkIcon *self)
 void cmk_icon_set_pixmap(CmkIcon *self, guchar *data, cairo_format_t format, guint size, guint frames, guint fps)
 {
 	CmkIconPrivate *private = PRIVATE(self);
+	
 	g_clear_pointer(&private->iconSurface, cairo_surface_destroy);
-	cairo_surface_t *surface = cairo_image_surface_create_for_data(data, format, size, size, cairo_format_stride_for_width(format, size));
-	private->iconSurface = surface;
+	private->iconSurface = cairo_image_surface_create(format, size, size);
+	guchar *surfData = cairo_image_surface_get_data(private->iconSurface);
+	memcpy(surfData, data, size*cairo_format_stride_for_width(format, size));
+	cairo_surface_mark_dirty(private->iconSurface);
+	
 	private->setPixmap = TRUE;
 	queue_update_canvas(self);
 }
