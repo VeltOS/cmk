@@ -18,7 +18,8 @@ struct _CmkScrollBoxPrivate
 	CoglPipeline *pipe;
 	ClutterScrollMode scrollMode;
 	ClutterPoint scroll;
-	gfloat natW, natH;
+	gfloat prefW, prefH;
+	float allocW, allocH;
 	gboolean scrollbars;
 	CmkShadoutil *shadow;
 	gboolean lShad, rShad, tShad, bShad;
@@ -37,6 +38,7 @@ static GParamSpec *properties[PROP_LAST];
 static void cmk_scroll_box_dispose(GObject *self_);
 static void cmk_scroll_box_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
+static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static void on_queue_relayout(ClutterActor *self_);
 static void on_paint(ClutterActor *self_);
 static gboolean on_scroll(ClutterActor *self_, ClutterScrollEvent *event);
@@ -59,7 +61,8 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 	base->dispose = cmk_scroll_box_dispose;
 
 	ClutterActorClass *actorClass = CLUTTER_ACTOR_CLASS(class);
-	actorClass->queue_relayout = on_queue_relayout;
+	actorClass->allocate = on_allocate;
+	//actorClass->queue_relayout = on_queue_relayout;
 	actorClass->paint = on_paint;
 	actorClass->scroll_event = on_scroll;
 	
@@ -77,14 +80,8 @@ static void cmk_scroll_box_init(CmkScrollBox *self)
 	CmkScrollBoxPrivate *private = PRIVATE(self);
 	private->ctx = clutter_backend_get_cogl_context(clutter_get_default_backend());
 	private->pipe = cogl_pipeline_new(private->ctx);
-	CoglColor *c = cogl_color_new();
-	cogl_color_init_from_4ub(c, 255,255,255,150);
-	cogl_color_premultiply(c);
-	cogl_pipeline_set_color(private->pipe, c);
-	cogl_color_free(c);
 
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
-	clutter_actor_set_clip_to_allocation(CLUTTER_ACTOR(self), TRUE);
 	clutter_point_init(&(PRIVATE(self)->scroll), 0.0f, 0.0f);
 
 	private->shadow = cmk_shadoutil_new();
@@ -134,20 +131,42 @@ static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const 
 	}
 }
 
-static void update_preferred_size(ClutterActor *self_)
+static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
-	if(private->natW > 0 && private->natH > 0)
-		return;
-	clutter_actor_get_preferred_size(self_, NULL, NULL, &private->natW, &private->natH); 
-}
 
-static void on_queue_relayout(ClutterActor *self_)
-{
-	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->queue_relayout(self_);
-	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+	// Since calling Clutter's allocate sets the values returned by
+	// get_width and get_height, and they're not the real width and
+	// height, the values must be saved manually.
+	private->allocW = (box->x2 - box->x1);
+	private->allocH = (box->y2 - box->y1);
+
+	// Can't use clip to allocation because we fake the allocation
+	clutter_actor_set_clip(self_, 0, 0, private->allocW, private->allocH);
+	
+	// Using get_preferred_size doesn't use the forWidth/forHeight
+	// values, which are important to get the right size on actors such
+	// as text which change height depending on their allocated width.
+	clutter_actor_get_preferred_width(self_,
+		private->allocH, &private->prefW, NULL);
+	clutter_actor_get_preferred_height(self_,
+		private->allocW, &private->prefH, NULL);
+	
+	// Do the regular Clutter allocation, except tell it that we have
+	// as much size as we're requesting, not how much we actually have.
+	// (Unless the actual size is larger than the request.)
+	ClutterActorBox new = {
+		box->x1,
+		box->y1,
+		box->x1 + MAX(private->allocW, private->prefW),
+		box->y1 + MAX(private->allocH, private->prefH)
+	};
+	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->allocate(self_, &new, flags | CLUTTER_DELEGATE_LAYOUT);
+
+	// Scroll to the current scroll position, which performs bounds
+	// checks on the position to make sure it's still within the valid
+	// scroll range.
 	scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
-	private->natW = private->natH = 0;
 }
 
 #define FLOAT_TO_POINTER(f) (void *)*(gsize*)&f
@@ -207,10 +226,10 @@ static void ensure_edge_shadow(CmkShadoutil *util, const gchar *edge, gboolean *
 
 static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloat maxScrollH)
 {
-	gfloat wEndPercent = maxScrollW / private->natW;
-	gfloat wPercent = private->scroll.x / private->natW;
-	gfloat hEndPercent = maxScrollH / private->natH;
-	gfloat hPercent = private->scroll.y / private->natH;
+	gfloat wEndPercent = maxScrollW / private->prefW;
+	gfloat wPercent = private->scroll.x / private->prefW;
+	gfloat hEndPercent = maxScrollH / private->prefH;
+	gfloat hPercent = private->scroll.y / private->prefH;
 
 	ensure_edge_shadow(private->shadow, "left", &private->lShad, &private->lShadDraw, wPercent);
 	ensure_edge_shadow(private->shadow, "right", &private->rShad, &private->rShadDraw, wEndPercent-wPercent);
@@ -238,55 +257,54 @@ static void on_paint(ClutterActor *self_)
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->paint(self_);
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
 	
-	gfloat width, height;
-	clutter_actor_get_size(self_, &width, &height);
-
-	update_preferred_size(self_);
-	
-	gfloat maxScrollW = MAX(private->natW - width, 0);
-	gfloat maxScrollH = MAX(private->natH - height, 0);
-	gfloat hPercent = private->scroll.y / private->natH;
-	gfloat wPercent = private->scroll.x / private->natW;
+	gfloat maxScrollW = MAX(private->prefW - private->allocW, 0);
+	gfloat maxScrollH = MAX(private->prefH - private->allocW, 0);
+	gfloat hPercent = private->scroll.y / private->prefH;
+	gfloat wPercent = private->scroll.x / private->prefW;
 
 	ensure_shadow(private, maxScrollW, maxScrollH);
 	
-	ClutterActorBox box = {0, 0, width, height};
+	ClutterActorBox box = {0, 0, private->allocW, private->allocH};
 	cmk_shadoutil_paint(private->shadow, &box);
 
 	if(!private->scrollbars)
 		return;
 
-	gfloat hBarSize = MIN(1, (height / private->natH)) * height; 
-	gfloat wBarSize = MIN(1, (width / private->natW)) * width; 
-	
-	const gfloat size = CMK_DP(self_, 4);
+	const gfloat barThickness = CMK_DP(self_, 4);
 	
 	// TODO: Scroll bars fade in and out
 	// TODO: Draggable scroll bars
+	// TODO: Stylable colors
 	
 	CoglFramebuffer *fb = cogl_get_draw_framebuffer();
+	float alpha = 0.6 * clutter_actor_get_paint_opacity(self_)/255.0;
+	cogl_pipeline_set_color4f(private->pipe,
+		1*alpha, // premultiplied alpha
+		1*alpha,
+		1*alpha,
+		alpha);
 	
-	if(private->natH > height && (private->scrollMode & CLUTTER_SCROLL_VERTICALLY))
+	if(private->prefH > private->allocH && (private->scrollMode & CLUTTER_SCROLL_VERTICALLY))
 	{
-		// TODO: Stylable colors
-
+		float hBarSize = MIN(1, (private->allocH / private->prefH)) * private->allocH; 
 		CoglPrimitive *p = 
 			rect_prim(private->ctx,
-			          width - size - size/2,
-			          hPercent * height,
-			          width- size/2,
-			          hPercent * height + hBarSize);
+			          private->allocW - barThickness - barThickness/2,
+			          hPercent * private->allocH,
+			          private->allocW - barThickness/2,
+			          hPercent * private->allocH + hBarSize);
 		cogl_primitive_draw(p, fb, private->pipe);
 		cogl_object_unref(p);
 	}
-	if(private->natW > width && (private->scrollMode & CLUTTER_SCROLL_HORIZONTALLY))
+	if(private->prefW > private->allocW && (private->scrollMode & CLUTTER_SCROLL_HORIZONTALLY))
 	{
+		float wBarSize = MIN(1, (private->allocW / private->prefW)) * private->allocW; 
 		CoglPrimitive *p = 
 			rect_prim(private->ctx,
-			          wPercent * width,
-			          height - size,
-			          wPercent * width + wBarSize,
-			          height);
+			          wPercent * private->allocW,
+			          private->allocH - barThickness,
+			          wPercent * private->allocW + wBarSize,
+			          private->allocH);
 		cogl_primitive_draw(p, fb, private->pipe);
 		cogl_object_unref(p);
 	}
@@ -295,24 +313,19 @@ static void on_paint(ClutterActor *self_)
 static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean exact)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(self);
-	gfloat width = clutter_actor_get_width(CLUTTER_ACTOR(self));
-	gfloat height = clutter_actor_get_height(CLUTTER_ACTOR(self));
-	
 	ClutterPoint new = *point;
 	
 	if(!exact)
 	{
 		// Don't scroll anywhere if the requested point is already in view
-		if(new.x >= private->scroll.x && new.x <= private->scroll.x + width)
+		if(new.x >= private->scroll.x && new.x <= private->scroll.x + private->allocW)
 			new.x = private->scroll.x;
-		if(new.y >= private->scroll.y && new.y <= private->scroll.y + height)
+		if(new.y >= private->scroll.y && new.y <= private->scroll.y + private->allocH)
 			new.y = private->scroll.y;
 	}
 	
-	update_preferred_size(CLUTTER_ACTOR(self));
-	
-	gfloat maxScrollW = MAX(private->natW - width, 0);
-	gfloat maxScrollH = MAX(private->natH - height, 0);
+	gfloat maxScrollW = MAX(private->prefW - private->allocW, 0);
+	gfloat maxScrollH = MAX(private->prefH - private->allocH, 0);
 	new.x = MIN(MAX(0, new.x), maxScrollW);
 	new.y = MIN(MAX(0, new.y), maxScrollH);
 	
