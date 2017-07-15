@@ -109,6 +109,13 @@ void cmk_textfield_set_error(CmkTextfield *textfield, const gchar *error);
  */
 void cmk_textfield_set_show_clear(CmkTextfield *textfield, gboolean show);
 
+/*
+ * cmk_textfield_set_is_password:
+ *
+ * Use this to hide the input with dots on sensitive input fields.
+ */
+void cmk_textfield_set_is_password(CmkTextfield *textfield, gboolean isPassword);
+
 G_END_DECLS
 
 #endif

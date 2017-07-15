@@ -452,3 +452,15 @@ void cmk_textfield_set_error(CmkTextfield *self, const gchar *error)
 void cmk_textfield_set_show_clear(CmkTextfield *self, gboolean show)
 {
 }
+
+void cmk_textfield_set_is_password(CmkTextfield *self, gboolean isPassword)
+{
+	g_return_if_fail(CMK_IS_TEXTFIELD(self));
+	// 0x2022 is a 'bullet' unicode char.
+	// TODO: ClutterText selection is broken when using a password char,
+	// probably due to confusing about the width of the text
+	if(isPassword)
+		clutter_text_set_password_char(cmk_label_get_clutter_text(PRIVATE(self)->input), 0x2022);
+	else
+		clutter_text_set_password_char(cmk_label_get_clutter_text(PRIVATE(self)->input), 0);
+}
