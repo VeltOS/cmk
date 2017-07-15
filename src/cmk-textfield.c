@@ -85,7 +85,7 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 	base->get_property = cmk_textfield_get_property;
 	
 	ClutterActorClass *actorClass = CLUTTER_ACTOR_CLASS(class);
-	//actorClass->get_preferred_width = cmk_textfield_get_preferred_width;
+	actorClass->get_preferred_width = cmk_textfield_get_preferred_width;
 	actorClass->get_preferred_height = cmk_textfield_get_preferred_height;
 	actorClass->allocate = cmk_textfield_allocate;
 	
@@ -237,7 +237,11 @@ static void cmk_textfield_get_property(GObject *self_, guint propertyId, GValue 
 
 static void cmk_textfield_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
-	// TODO: Is this needed?
+	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
+	float natA, natB;
+	clutter_actor_get_preferred_width(CLUTTER_ACTOR(private->name), -1, NULL, &natA);
+	clutter_actor_get_preferred_width(CLUTTER_ACTOR(private->description), -1, NULL, &natB);
+	*minWidth = *natWidth = MAX(natA, natB);
 }
 
 static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
