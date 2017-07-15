@@ -25,6 +25,7 @@ add_library(cmk SHARED
 	src/cmk-scroll-box.c
 	src/cmk-separator.c
 	src/cmk-shadow.c
+	src/cmk-textfield.c
 	src/cmk-util.c
 	src/cmk-widget.c
 )
