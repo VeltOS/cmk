@@ -164,9 +164,9 @@ static void cmk_textfield_init(CmkTextfield *self)
 
 	private->underline = cmk_widget_new();
 	private->underlineFocus = cmk_widget_new();
-	cmk_widget_set_background_color(private->underline, "foreground");
+	cmk_widget_set_named_color_link(private->underline, "background", "foreground");
 	cmk_widget_set_draw_background_color(private->underline, TRUE);
-	cmk_widget_set_background_color(private->underlineFocus, "accent");
+	cmk_widget_set_named_color_link(private->underlineFocus, "background", "primary");
 	cmk_widget_set_draw_background_color(private->underlineFocus, TRUE);
 	
 	clutter_actor_add_child(CLUTTER_ACTOR(self), CLUTTER_ACTOR(private->underline));

@@ -193,10 +193,9 @@ static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, 
 static void on_styles_changed(CmkWidget *self_, guint flags)
 {
 	CMK_WIDGET_CLASS(cmk_label_parent_class)->styles_changed(self_, flags);
-	if((flags & CMK_STYLE_FLAG_COLORS)
-	|| (flags & CMK_STYLE_FLAG_BACKGROUND_NAME))
+	if((flags & CMK_STYLE_FLAG_COLORS))
 	{
-		const ClutterColor *color = cmk_widget_get_foreground_clutter_color(self_);
+		const ClutterColor *color = cmk_widget_get_default_named_color(self_, "foreground");
 		clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
 	}
 	if(flags & CMK_STYLE_FLAG_DP)

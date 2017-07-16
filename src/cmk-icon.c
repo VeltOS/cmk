@@ -227,7 +227,6 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 {
 	CMK_WIDGET_CLASS(cmk_icon_parent_class)->styles_changed(self_, flags);
 	if((flags & CMK_STYLE_FLAG_COLORS)
-	|| (flags & CMK_STYLE_FLAG_BACKGROUND_NAME)
 	|| (flags & CMK_STYLE_FLAG_DP))
 		queue_update_canvas(CMK_ICON(self_));
 }
@@ -251,7 +250,8 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 		cairo_scale(cr, factor, factor);
 		if(PRIVATE(self)->useForegroundColor)
 		{
-			cairo_set_source_clutter_color(cr, cmk_widget_get_foreground_clutter_color(CMK_WIDGET(self)));
+			cairo_set_source_clutter_color(cr,
+				cmk_widget_get_default_named_color(CMK_WIDGET(self), "foreground"));
 			cairo_mask_surface(cr, PRIVATE(self)->iconSurface, 0, 0);
 		}
 		else

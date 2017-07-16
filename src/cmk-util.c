@@ -52,7 +52,6 @@ CmkWidget * cmk_window_new(const gchar *title, float width, float height, Clutte
 	clutter_stage_set_minimum_size(CLUTTER_STAGE(stage), width*dpScale/2, height*dpScale/2);
 	clutter_actor_set_size(stage, width*dpScale, height*dpScale);
 
-	cmk_widget_set_background_color(bg, "background");
 	cmk_widget_set_draw_background_color(bg, TRUE);
 	clutter_actor_add_child(stage, CLUTTER_ACTOR(bg));
 	clutter_actor_show(stage);

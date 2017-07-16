@@ -46,7 +46,6 @@ static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event);
 static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event);
 static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event);
 static void on_styles_changed(CmkWidget *self_, guint flags);
-static void on_background_changed(CmkWidget *self_);
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self);
 static gboolean on_key_pressed(ClutterActor *self_, ClutterKeyEvent *event);
 static void on_key_focus(ClutterActor *self_);
@@ -57,17 +56,12 @@ G_DEFINE_TYPE_WITH_PRIVATE(CmkButton, cmk_button, CMK_TYPE_WIDGET);
 
 
 
-CmkButton * cmk_button_new(void)
+CmkButton * cmk_button_new(CmkButtonType type)
 {
-	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, NULL));
+	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "type", type, NULL));
 }
 
-CmkButton * cmk_button_new_with_text(const gchar *text)
-{
-	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, NULL));
-}
-
-CmkButton * cmk_button_new_full(const gchar *text, CmkButtonType type)
+CmkButton * cmk_button_new_with_text(const gchar *text, CmkButtonType type)
 {
 	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON, "text", text, "type", type, NULL));
 }
@@ -94,7 +88,7 @@ static void cmk_button_class_init(CmkButtonClass *class)
 	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 
 	properties[PROP_TEXT] = g_param_spec_string("text", "text", "The button's text label", "", G_PARAM_READWRITE);
-	properties[PROP_TYPE] = g_param_spec_int("type", "type", "CmkButtonType value of this button", CMK_BUTTON_TYPE_RECT, CMK_BUTTON_TYPE_CIRCLE, CMK_BUTTON_TYPE_RECT, G_PARAM_READWRITE);
+	properties[PROP_TYPE] = g_param_spec_int("type", "type", "CmkButtonType value of this button", CMK_BUTTON_TYPE_EMBED, CMK_BUTTON_TYPE_ACTION, CMK_BUTTON_TYPE_RAISED, G_PARAM_READWRITE | G_PARAM_CONSTRUCT);
 	
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
@@ -127,8 +121,9 @@ static void cmk_button_init(CmkButton *self)
 	clutter_actor_set_content(self_, canvas);
 
 	// TODO: Styling time
-	private->downAnim = clutter_timeline_new(300);
-	private->upAnim = clutter_timeline_new(300);
+	private->downAnim = clutter_timeline_new(600);
+	private->upAnim = clutter_timeline_new(600);
+	clutter_timeline_set_progress_mode(private->downAnim, CLUTTER_EASE_OUT_CUBIC);
 	g_signal_connect_swapped(private->downAnim, "new-frame", G_CALLBACK(on_anim_canvas), self);
 	g_signal_connect_swapped(private->upAnim, "new-frame", G_CALLBACK(on_anim_canvas), self);
 }
@@ -372,12 +367,12 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	cairo_restore(cr);
 
 	// For non-square buttons, clip the drawing area
-	if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED || PRIVATE(self)->type == CMK_BUTTON_TYPE_CIRCLE)
+	if(private->type != CMK_BUTTON_TYPE_EMBED)
 	{
 		double radius;
 		double degrees = M_PI / 180.0;
 
-		if(PRIVATE(self)->type == CMK_BUTTON_TYPE_BEVELED)
+		if(private->type == CMK_BUTTON_TYPE_FLAT || private->type == CMK_BUTTON_TYPE_RAISED)
 			radius = CMK_DP(self, BEVEL_RADIUS) * cmk_widget_get_bevel_radius_multiplier(CMK_WIDGET(self));
 		else
 			radius = MIN(width, height)/2;
@@ -394,9 +389,18 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	}
 
 	// Paint background
-	const ClutterColor *color = cmk_widget_get_background_clutter_color(CMK_WIDGET(self));
-	cairo_set_source_clutter_color(cr, color);
-	cairo_paint(cr);
+	if(private->type == CMK_BUTTON_TYPE_RAISED)
+	{
+		const ClutterColor *color = cmk_widget_get_default_named_color(CMK_WIDGET(self), "primary");
+		cairo_set_source_clutter_color(cr, color);
+		cairo_paint(cr);
+	}
+	else if(private->type == CMK_BUTTON_TYPE_ACTION)
+	{
+		const ClutterColor *color = cmk_widget_get_default_named_color(CMK_WIDGET(self), "accent");
+		cairo_set_source_clutter_color(cr, color);
+		cairo_paint(cr);
+	}
 
 	// Paint hover / selected color
 	if(private->hover
@@ -404,7 +408,7 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	|| clutter_actor_has_key_focus(CLUTTER_ACTOR(self)))
 	{
 		const gchar *color = private->hover ? "hover" : "selected";
-		cairo_set_source_clutter_color(cr, cmk_widget_get_named_color(CMK_WIDGET(self), color));
+		cairo_set_source_clutter_color(cr, cmk_widget_get_default_named_color(CMK_WIDGET(self), color));
 		cairo_paint(cr);
 	}
 	
@@ -486,14 +490,13 @@ void cmk_button_set_type(CmkButton *self, CmkButtonType type)
 	if(PRIVATE(self)->type != type)
 	{
 		PRIVATE(self)->type = type;
-		if(PRIVATE(self)->hover)
-			clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
+		clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
 	}
 }
 
 CmkButtonType cmk_button_get_btype(CmkButton *self)
 {
-	g_return_val_if_fail(CMK_IS_BUTTON(self), CMK_BUTTON_TYPE_RECT);
+	g_return_val_if_fail(CMK_IS_BUTTON(self), CMK_BUTTON_TYPE_EMBED);
 	return PRIVATE(self)->type;
 }
 

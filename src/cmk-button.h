@@ -44,11 +44,27 @@ struct _CmkButtonClass
 	void (*activate) (CmkButton *self);
 };
 
+/**
+ * CmkButtonType:
+ * @CMK_BUTTON_TYPE_EMBED: No bevel, no background. Useful for menus.
+ * @CMK_BUTTON_TYPE_FLAT: Bevel but no background. Useful for popups.
+ * @CMK_BUTTON_TYPE_FLAT_CIRCLE: Flat, but circle shaped for icon-only buttons.
+ * @CMK_BUTTON_TYPE_RAISED: Bevel, background, and drop shadow.
+ * @CMK_BUTTON_TYPE_ACTION: Circular, bevel, background, larger drop shadow.
+ *
+ * Button types come from Material Design standard. Some of their
+ * "button types", like the drop-down button, are separated into their
+ * own Cmk class.
+ *
+ * TODO: Not all button features are fully implemented yet.
+ */
 typedef enum
 {
-	CMK_BUTTON_TYPE_RECT,
-	CMK_BUTTON_TYPE_BEVELED,
-	CMK_BUTTON_TYPE_CIRCLE,
+	CMK_BUTTON_TYPE_EMBED,
+	CMK_BUTTON_TYPE_FLAT,
+	CMK_BUTTON_TYPE_FLAT_CIRCLE,
+	CMK_BUTTON_TYPE_RAISED,
+	CMK_BUTTON_TYPE_ACTION,
 } CmkButtonType;
 
 /**
@@ -56,9 +72,8 @@ typedef enum
  *
  * Creates a new button with no text or content.
  */
-CmkButton * cmk_button_new(void);
-CmkButton * cmk_button_new_with_text(const gchar *text);
-CmkButton * cmk_button_new_full(const gchar *text, CmkButtonType type);
+CmkButton * cmk_button_new(CmkButtonType type);
+CmkButton * cmk_button_new_with_text(const gchar *text, CmkButtonType type);
 
 /*
  * Sets the text of the button. Set %NULL for no text (useful for

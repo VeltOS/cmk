@@ -50,10 +50,16 @@ struct _CmkWidgetPrivate
 	gboolean debug;
 };
 
+typedef struct
+{
+	// Only one of these will be set at a time
+	ClutterColor *color;
+	gchar *link;
+} CmkColor;
+
 enum
 {
 	PROP_STYLE_PARENT = 1,
-	PROP_BACKGROUND_COLOR_NAME,
 	PROP_DRAW_BACKGROUND,
 	PROP_DP_SCALE,
 	PROP_PADDING_MULTIPLIER,
@@ -87,6 +93,7 @@ static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 //static void update_named_background_color(CmkWidget *self);
 static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event);
 static void on_key_focus(ClutterActor *self_);
+static void cmk_color_free(CmkColor *color);
 #define dmsg(self, fmt...) if(PRIVATE((CmkWidget *)(self))->debug){g_message("CmkWidget: " fmt);}
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, CLUTTER_TYPE_ACTOR);
@@ -125,22 +132,6 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                    "Style Parent",
 		                    "The current widget used for inheriting styles",
 		                    CMK_TYPE_WIDGET,
-		                    G_PARAM_READWRITE);
-
-	/**
-	 * CmkWidget:background-color-name:
-	 *
-	 * Named color to use to draw the widget's background.
-	 *
-	 * Getting this property returns only the manually set value; if the
-	 * current background name is inherited, this gets NULL. Use
-	 * cmk_widget_get_background_color() to get the inherited value.
-	 */
-	properties[PROP_BACKGROUND_COLOR_NAME] =
-		g_param_spec_string("background-color-name",
-		                    "Background Color Name",
-		                    "Named color to use to draw the widget's background",
-		                    NULL,
 		                    G_PARAM_READWRITE);
 
 	/**
@@ -307,7 +298,7 @@ static void cmk_widget_init(CmkWidget *self)
 {
 	CmkWidgetPrivate *private = PRIVATE(self);
 
-	private->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)clutter_color_free);
+	private->colors = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)cmk_color_free);
 	private->dpScale = private->dpScaleCache = 1;
 	private->paddingMultiplier = -1;
 	private->bevelRadiusMultiplier = -1;
@@ -333,9 +324,6 @@ static void cmk_widget_set_property(GObject *self_, guint propertyId, const GVal
 	{
 	case PROP_STYLE_PARENT:
 		cmk_widget_set_style_parent(self, g_value_get_object(value));
-		break;
-	case PROP_BACKGROUND_COLOR_NAME:
-		cmk_widget_set_background_color(self, g_value_get_string(value));
 		break;
 	case PROP_DRAW_BACKGROUND:
 		cmk_widget_set_draw_background_color(self, g_value_get_boolean(value));
@@ -367,9 +355,6 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 	{
 	case PROP_STYLE_PARENT:
 		g_value_set_object(value, PRIVATE(self)->styleParent);
-		break;
-	case PROP_BACKGROUND_COLOR_NAME:
-		g_value_set_string(value, PRIVATE(self)->backgroundColorName);
 		break;
 	case PROP_DRAW_BACKGROUND:
 		g_value_set_boolean(value, PRIVATE(self)->drawBackground);
@@ -437,11 +422,6 @@ static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 	// it to this widget if this widget isn't setting its own value for
 	// the property.
 	// dp and colors can't be overridden like the others, so don't check
-	if(flags & CMK_STYLE_FLAG_BACKGROUND_NAME)
-	{
-		if(private->backgroundColorName)
-			flags &= ~CMK_STYLE_FLAG_BACKGROUND_NAME;
-	}
 	if(flags & CMK_STYLE_FLAG_PADDING_MUL)
 	{
 		if(private->paddingMultiplier >= 0)
@@ -537,8 +517,7 @@ static void on_styles_changed(CmkWidget *self, guint flags)
 {
 	dmsg(self, "%p: on_styles_changed (%i)", self, flags);
 	CmkWidgetPrivate *private = PRIVATE(self);
-	if((flags & CMK_STYLE_FLAG_BACKGROUND_NAME)
-	|| (flags & CMK_STYLE_FLAG_COLORS))
+	if(flags & CMK_STYLE_FLAG_COLORS)
 	{
 		update_background_color(self);
 	}
@@ -558,8 +537,35 @@ static void on_styles_changed(CmkWidget *self, guint flags)
 void cmk_widget_set_named_color(CmkWidget *self, const gchar *name, const ClutterColor *color)
 {
 	g_return_if_fail(CMK_IS_WIDGET(self));
-	ClutterColor *c = clutter_color_copy(color);
-	g_hash_table_insert(PRIVATE(self)->colors, g_strdup(name), c);
+	if(!color)
+	{
+		if(!g_hash_table_remove(PRIVATE(self)->colors, name))
+			return;
+	}
+	else
+	{
+		CmkColor *c = g_new0(CmkColor, 1);
+		c->color = clutter_color_copy(color);
+		g_hash_table_insert(PRIVATE(self)->colors, g_strdup(name), c);
+	}
+	// Updating the COLORS property will call update_background_color 
+	update_style_properties(self, CMK_STYLE_FLAG_COLORS);
+}
+
+void cmk_widget_set_named_color_link(CmkWidget *self, const gchar *name, const gchar *link)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	if(!link)
+	{
+		if(!g_hash_table_remove(PRIVATE(self)->colors, name))
+			return;
+	}
+	else
+	{
+		CmkColor *c = g_new0(CmkColor, 1);
+		c->link = g_strdup(link);
+		g_hash_table_insert(PRIVATE(self)->colors, g_strdup(name), c);
+	}
 	// Updating the COLORS property will call update_background_color 
 	update_style_properties(self, CMK_STYLE_FLAG_COLORS);
 }
@@ -569,72 +575,60 @@ void cmk_widget_set_named_colors(CmkWidget *self, const CmkNamedColor *colors)
 	g_return_if_fail(CMK_IS_WIDGET(self));
 	for(guint i=0; colors[i].name != NULL; ++i)
 	{
-		ClutterColor *c = clutter_color_copy(&colors[i].color);
+		CmkColor *c = g_new0(CmkColor, 1);
+		c->color = clutter_color_copy(&colors[i].color);
 		g_hash_table_insert(PRIVATE(self)->colors, g_strdup(colors[i].name), c);
 	}
 	update_style_properties(self, CMK_STYLE_FLAG_COLORS);
 }
 
-const ClutterColor * cmk_widget_get_named_color(CmkWidget *self, const gchar *name)
+static const ClutterColor * cmk_widget_get_named_color_internal(CmkWidgetPrivate *private, const gchar *name, const gchar *original)
 {
-	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
-	CmkWidgetPrivate *private = PRIVATE(self);
 	if(G_UNLIKELY(!name || private->disposed))
 		return NULL;
-	const ClutterColor *ret = NULL;
+	const CmkColor *ret = NULL;
 	if(g_hash_table_size(private->colors) > 0)
 		ret = g_hash_table_lookup(private->colors, name);
 	if(ret)
-		return ret;
+	{
+		if(ret->color)
+			return ret->color;
+		else if(ret->link && g_strcmp0(ret->link, original) != 0) // Prevent some cycles
+			return cmk_widget_get_named_color_internal(private, ret->link, original);
+	}
 	if(private->actualStyleParent)
 		return cmk_widget_get_named_color(private->actualStyleParent, name);
 	return NULL;
 }
 
-void cmk_widget_set_background_color(CmkWidget *self, const gchar *namedColor)
+const ClutterColor * cmk_widget_get_named_color(CmkWidget *self, const gchar *name)
 {
-	g_return_if_fail(CMK_IS_WIDGET(self));
-	if(g_strcmp0(PRIVATE(self)->backgroundColorName, namedColor) == 0)
-		return;
-	g_clear_pointer(&(PRIVATE(self)->backgroundColorName), g_free);
-	PRIVATE(self)->backgroundColorName = g_strdup(namedColor);
-	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_BACKGROUND_COLOR_NAME]);
-	update_style_properties(self, CMK_STYLE_FLAG_BACKGROUND_NAME);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
+	return cmk_widget_get_named_color_internal(PRIVATE(self), name, name);
+}
+
+const ClutterColor * cmk_widget_get_default_named_color(CmkWidget *self, const gchar *name)
+{
+	const ClutterColor *color = clutter_color_get_static(CLUTTER_COLOR_BLACK);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), color);
+
+	color = cmk_widget_get_named_color(self, name);
+	if(color)
+		return color;
+	
+	if(g_str_has_suffix(name, "background"))
+		return clutter_color_get_static(CLUTTER_COLOR_WHITE);
+	if(g_str_has_suffix(name, "foreground"))
+		return clutter_color_get_static(CLUTTER_COLOR_BLACK);
+	return clutter_color_get_static(CLUTTER_COLOR_GRAY);
 }
 
 static void update_background_color(CmkWidget *self)
 {
 	if(!PRIVATE(self)->drawBackground)
 		return;
-	const ClutterColor *color = NULL;
-	if(PRIVATE(self)->backgroundColorName)
-		color = cmk_widget_get_background_clutter_color(self);
+	const ClutterColor *color = cmk_widget_get_named_color(self, "background");
 	clutter_actor_set_background_color(CLUTTER_ACTOR(self), color);
-}
-
-const gchar * cmk_widget_get_background_color(CmkWidget *self)
-{
-	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
-	CmkWidgetPrivate *private = PRIVATE(self);
-	if(G_UNLIKELY(private->disposed))
-		return NULL;
-	else if(private->backgroundColorName)
-		return private->backgroundColorName;
-	else if(private->actualStyleParent)
-		return cmk_widget_get_background_color(private->actualStyleParent);
-	return NULL;
-}
-
-const ClutterColor * cmk_widget_get_background_clutter_color(CmkWidget *self)
-{
-	const gchar *name = cmk_widget_get_background_color(self);
-	if(name)
-	{
-		const ClutterColor *color = cmk_widget_get_named_color(self, name);
-		if(color)
-			return color;
-	}
-	return clutter_color_get_static(CLUTTER_COLOR_WHITE);
 }
 
 /*
@@ -657,30 +651,6 @@ void cmk_widget_set_draw_background_color(CmkWidget *self, gboolean draw)
 	else
 		clutter_actor_set_background_color(CLUTTER_ACTOR(self), NULL);
 }
-
-const ClutterColor * cmk_widget_get_foreground_clutter_color(CmkWidget *self)
-{
-	const ClutterColor *black = clutter_color_get_static(CLUTTER_COLOR_BLACK);
-	g_return_val_if_fail(CMK_IS_WIDGET(self), black);
-	if(G_UNLIKELY(PRIVATE(self)->disposed))
-		return black;
-
-	const gchar *bgColor = cmk_widget_get_background_color(self);
-	const ClutterColor *color = NULL;
-	if(bgColor)
-	{
-		gchar *name = g_strdup_printf("%s-foreground", bgColor);
-		color = cmk_widget_get_named_color(self, name);
-		g_free(name);
-		if(color)
-			return color;
-	}
-	color = cmk_widget_get_named_color(self, "foreground");
-	if(color)
-		return color;
-	return black;
-} 
-
 
 void cmk_widget_set_dp_scale(CmkWidget *self, float dp)
 {
@@ -1117,4 +1087,13 @@ void cmk_widget_set_debug(CmkWidget *self, gboolean debug)
 gboolean cmk_widget_get_debug(CmkWidget *self)
 {
 	return PRIVATE(self)->debug;
+}
+
+static void cmk_color_free(CmkColor *color)
+{
+	if(!color) return;
+	if(color->color)
+		clutter_color_free(color->color);
+	g_free(color->link);
+	g_free(color);;
 }

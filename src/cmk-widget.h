@@ -47,6 +47,11 @@ G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
  * replace it with a new one. This is similar to the idea of Fragments and
  * a Fragment stack in Android, and is great for sequences of dialogs showed
  * to the user, or for widgets with subdialogs.
+ *
+ * Widgets use named colors for their drawing. The colors that Cmk may use
+ * (depending on the widgets) are: "background", "foreground", "primary",
+ * "accent", "hover", and "selected". You must at least set all of these
+ * colors at the start of your program.
  */
 
 /**
@@ -66,11 +71,10 @@ G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
 enum
 {
 	CMK_STYLE_FLAG_COLORS = 1<<0,
-	CMK_STYLE_FLAG_BACKGROUND_NAME = 1<<1,
-	CMK_STYLE_FLAG_PADDING_MUL = 1<<2,
-	CMK_STYLE_FLAG_BEVEL_MUL = 1<<3,
-	CMK_STYLE_FLAG_DP = 1<<4,
-	CMK_STYLE_FLAG_ALL = (1<<5)-1,
+	CMK_STYLE_FLAG_PADDING_MUL = 1<<1,
+	CMK_STYLE_FLAG_BEVEL_MUL = 1<<2,
+	CMK_STYLE_FLAG_DP = 1<<3,
+	CMK_STYLE_FLAG_ALL = (1<<4)-1,
 } CmkStyleFlag;
 
 typedef struct _CmkWidgetClass CmkWidgetClass;
@@ -164,11 +168,30 @@ CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
 
 /**
  * cmk_widget_set_named_color:
+ * @name: The name of the color
+ * @color: The color, or NULL to unset.
  *
  * Sets a named color that can be used to draw the widget. This color will be
  * inherited by child #CmkWidgets.
  */
 void cmk_widget_set_named_color(CmkWidget *widget, const gchar *name, const ClutterColor *color);
+
+/**
+ * cmk_widget_set_named_color_link:
+ * @name: The name of the color
+ * @linkto: The color @name should link to, or NULL to unset.
+ *
+ * Sets a named color using the value of another named color. This is useful
+ * to, for example, tell a widget to use the "primary" color whenever it
+ * wants to draw "background". This is mutually exclusive with
+ * cmk_widget_set_named_color() (calling one will overwrite the value set
+ * by the other on a single widget).
+ *
+ * Color links are inherited just like regular named colors. A color can
+ * be linked to a linked color, forming a chain. A link cycle may result
+ * in a crash, so be careful.
+ */
+void cmk_widget_set_named_color_link(CmkWidget *self, const gchar *name, const gchar *linkto);
 
 /**
  * cmk_widget_set_named_colors:
@@ -185,57 +208,38 @@ void cmk_widget_set_named_colors(CmkWidget *widget, const CmkNamedColor *colors)
  * Gets a named color set with cmk_widget_set_named_color(). If it is not
  * found, an inherited value is returned. If there is no inherited value,
  * %NULL is returned.
+ *
+ * See also cmk_widget_get_default_named_color(), which is probably what
+ * you want instead of this function.
  */
 const ClutterColor * cmk_widget_get_named_color(CmkWidget *widget, const gchar *name);
 
 /**
- * cmk_widget_set_background_color:
- * @namedColor: A color set with cmk_widget_set_named_color() on this widget
- * any of its parents.
+ * cmk_widget_get_default_named_color:
+ * @name: Name of color to get
  *
- * Similar to clutter_actor_set_background_color(), except it uses the named
- * color from the current style. Set to %NULL to have a fully transparent
- * background (the default).
- * See cmk_widget_set_draw_background_color().
- */
-void cmk_widget_set_background_color(CmkWidget *widget, const gchar *namedColor);
-
-/**
- * cmk_widget_get_background_color:
+ * Same as cmk_widget_get_named_color, except always returns a valid color
+ * even if the color has never been defined. If these colors aren't defined,
+ * then currently "background" returns solid white, "foreground" returns
+ * solid black, and all other colors return gray.
  *
- * Gets the effective background color of the widget. If no background
- * color for this widget has been set, the parent widget's get_background_color
- * method will be called. Foreground actors should base their color on this
- * background color. If this method returns %NULL, the background color is
- * unknown, and foreground actors should use a default color.
+ * This method is preferred to cmk_widget_get_named_color() when drawing
+ * colors for a widget, as it will make the widget always at least usable
+ * (but probably not good-looking).
  */
-const gchar * cmk_widget_get_background_color(CmkWidget *widget);
-
-/**
- * cmk_widget_get_background_clutter_color:
- *
- * Similar to calling cmk_widget_get_background_color() and
- * cmk_widget_get_named_color(), except returns solid white if no color is found.
- */
-const ClutterColor * cmk_widget_get_background_clutter_color(CmkWidget *widget);
+const ClutterColor * cmk_widget_get_default_named_color(CmkWidget *widget, const gchar *name);
 
 /**
  * cmk_widget_set_draw_background_color:
  *
- * If %TRUE, #CmkWidget will draw the color set in
- * cmk_widget_set_background_color(). Otherwise, you should draw it.
+ * If %TRUE, #CmkWidget will use clutter_actor_set_background_color()
+ * with the color specified by the "background" named color (and update
+ * automatically as "background" changes).
+ * Changing this value to %FALSE will set the background color to NULL,
+ * making a transparent background.
  * Defaults to %FALSE.
  */
 void cmk_widget_set_draw_background_color(CmkWidget *widget, gboolean draw);
-
-/**
- * cmk_widget_get_foreground_clutter_color:
- *
- * Attempts to find a foreground color from the current background color.
- * This first tries to use the named color "<background name>-foreground",
- * then tries "foreground", and if both fail, returns solid black.
- */
-const ClutterColor * cmk_widget_get_foreground_clutter_color(CmkWidget *widget);
 
 /**
  * cmk_widget_set_dp_scale:
