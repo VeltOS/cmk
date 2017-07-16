@@ -217,15 +217,14 @@ static float get_system_font_size_dp(CmkLabel *self)
 	PangoFontDescription *desc = pango_font_description_from_string(name);
 	g_free(name);
 	
-	gdouble dpi = clutter_backend_get_resolution(clutter_get_default_backend());
 	float dpScale = cmk_widget_get_dp_scale(CMK_WIDGET(self));
 	
 	float size = pango_font_description_get_size(desc);
 	size /= PANGO_SCALE;
 	if(pango_font_description_get_size_is_absolute(desc))
-		size /= dpScale*2;
+		size /= dpScale;
 	else
-		size = (dpi/72.0)*size / (dpScale*2);
+		size = (96.0/72.0)*size / dpScale;
 	pango_font_description_free(desc);
 	return size;
 }
