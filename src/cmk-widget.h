@@ -50,8 +50,8 @@ G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
  *
  * Widgets use named colors for their drawing. The colors that Cmk may use
  * (depending on the widgets) are: "background", "foreground", "primary",
- * "accent", "hover", and "selected". You must at least set all of these
- * colors at the start of your program.
+ * "accent", "error", "hover", and "selected". You should at least set all of
+ * these colors at the start of your program.
  */
 
 /**

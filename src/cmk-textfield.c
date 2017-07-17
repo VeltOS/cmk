@@ -28,8 +28,8 @@ typedef struct _CmkTextfieldPrivate CmkTextfieldPrivate;
 struct _CmkTextfieldPrivate 
 {
 	gchar *placeholder;
-	gchar *error;
-	gboolean showClear, showName, showDescription;
+	gchar *descriptionText; // NULL to not show description
+	gboolean showClear, showName, showError;
 	CmkLabel *name;
 	CmkLabel *description;
 	CmkLabel *input;
@@ -66,6 +66,7 @@ static void on_styles_changed(CmkWidget *self_, guint flags);
 static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline);
 static void on_input_focus_in(CmkTextfield *self);
 static void on_input_focus_out(CmkTextfield *self);
+static void on_text_changed(CmkTextfield *self, ClutterText *inputText);
 static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 //static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event);
 
@@ -152,6 +153,7 @@ static void cmk_textfield_init(CmkTextfield *self)
 	clutter_text_set_single_line_mode(inputClutterText, TRUE);
 	g_signal_connect_swapped(inputClutterText, "key-focus-in", G_CALLBACK(on_input_focus_in), self);
 	g_signal_connect_swapped(inputClutterText, "key-focus-out", G_CALLBACK(on_input_focus_out), self);
+	g_signal_connect_swapped(inputClutterText, "text-changed", G_CALLBACK(on_text_changed), self);
 	
 	private->name = cmk_label_new();
 	cmk_label_set_no_spacing(private->name, TRUE);
@@ -183,7 +185,7 @@ static void cmk_textfield_dispose(GObject *self_)
 {
 	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
 	g_clear_pointer(&private->placeholder, g_free);
-	g_clear_pointer(&private->error, g_free);
+	g_clear_pointer(&private->descriptionText, g_free);
 	g_clear_object(&private->focusTimeline);
 	G_OBJECT_CLASS(cmk_textfield_parent_class)->dispose(self_);
 }
@@ -264,7 +266,7 @@ static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWi
 	height += LABEL_PADDING;
 	height += UNDERLINE_FOCUS_SIZE;
 	
-	if(private->showDescription)
+	if(private->descriptionText)
 	{
 		height += LABEL_PADDING;
 		height += HELPER_LABEL_SIZE;
@@ -287,6 +289,11 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 		if(private->focus)
 			on_input_focus_out(CMK_TEXTFIELD(self_));
 	}
+}
+
+static void on_text_changed(CmkTextfield *self, ClutterText *inputText)
+{
+	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
 }
 
 static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline)
@@ -350,6 +357,7 @@ static void on_input_focus_out(CmkTextfield *self)
 	clutter_actor_set_easing_duration(CLUTTER_ACTOR(private->name), TRANS_TIME);
 	clutter_actor_set_opacity(CLUTTER_ACTOR(private->name), PLACEHOLDER_OPACITY);
 	clutter_actor_restore_easing_state(CLUTTER_ACTOR(private->name));
+	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
 }
 
 
@@ -418,7 +426,7 @@ static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *b
 
 	childBox.y1 += UNDERLINE_FOCUS_SIZE*dpScale;
 
-	if(private->showDescription)
+	if(private->descriptionText)
 	{
 		childBox.y1 += LABEL_PADDING*dpScale;
 		ClutterActorBox descriptionBox = {
@@ -453,8 +461,9 @@ void cmk_textfield_set_name(CmkTextfield *self, const gchar *text)
 void cmk_textfield_set_description(CmkTextfield *self, const gchar *text)
 {
 	g_return_if_fail(CMK_IS_TEXTFIELD(self));
-	PRIVATE(self)->showDescription = (text != NULL);
-	cmk_label_set_text(PRIVATE(self)->description, text);
+	PRIVATE(self)->descriptionText = g_strdup(text);
+	if(!PRIVATE(self)->showError)
+		cmk_label_set_text(PRIVATE(self)->description, text);
 }
 
 void cmk_textfield_set_placeholder(CmkTextfield *self, const gchar *placeholder)
@@ -463,6 +472,22 @@ void cmk_textfield_set_placeholder(CmkTextfield *self, const gchar *placeholder)
 
 void cmk_textfield_set_error(CmkTextfield *self, const gchar *error)
 {
+	CmkTextfieldPrivate *private = PRIVATE(self);
+	private->showError = (error != NULL);
+	if(error)
+	{
+		clutter_actor_set_opacity(CLUTTER_ACTOR(private->description), 255);
+		cmk_widget_set_named_color_link(CMK_WIDGET(private->description), "foreground", "error");
+		cmk_label_set_text(private->description, error);
+		cmk_label_set_bold(private->description, TRUE);
+	}
+	else
+	{
+		clutter_actor_set_opacity(CLUTTER_ACTOR(private->description), DESCRIPTION_OPACITY);
+		cmk_widget_set_named_color_link(CMK_WIDGET(private->description), "foreground", NULL);
+		cmk_label_set_bold(private->description, FALSE);
+		cmk_label_set_text(private->description, private->descriptionText);
+	}
 }
 
 void cmk_textfield_set_show_clear(CmkTextfield *self, gboolean show)
