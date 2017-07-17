@@ -304,6 +304,8 @@ static void cmk_button_allocate(ClutterActor *self_, const ClutterActorBox *box,
 
 static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
 {
+	if(cmk_widget_get_disabled(CMK_WIDGET(self_)))
+		return CLUTTER_EVENT_STOP;
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	private->held = TRUE;
 	
@@ -322,6 +324,8 @@ static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
 static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event)
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
+	if(G_UNLIKELY(!private->held))
+		return CLUTTER_EVENT_STOP;
 	private->held = FALSE;
 	clutter_input_device_ungrab(event->device);
 	cmk_grab(FALSE);
@@ -339,12 +343,13 @@ static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event
 
 static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event)
 {
-	if(event->type == CLUTTER_ENTER)
-		PRIVATE(CMK_BUTTON(self_))->hover = TRUE;
-	else
-		PRIVATE(CMK_BUTTON(self_))->hover = FALSE;
-	
-	clutter_content_invalidate(clutter_actor_get_content(self_));
+	gboolean hover =
+		(event->type == CLUTTER_ENTER && !cmk_widget_get_disabled(CMK_WIDGET(self_)));
+	if(hover != PRIVATE(CMK_BUTTON(self_))->hover)
+	{
+		PRIVATE(CMK_BUTTON(self_))->hover = hover;
+		clutter_content_invalidate(clutter_actor_get_content(self_));
+	}
 	return TRUE;
 }
 
@@ -354,6 +359,8 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 	ClutterContent *content = clutter_actor_get_content(CLUTTER_ACTOR(self_));
 	if(content)
 		clutter_content_invalidate(content);
+	if((flags & CMK_STYLE_FLAG_DISABLED))
+		cmk_widget_set_tabbable(self_, !cmk_widget_get_disabled(self_));
 }
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
@@ -392,7 +399,12 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	if(private->type == CMK_BUTTON_TYPE_RAISED)
 	{
 		const ClutterColor *color = cmk_widget_get_default_named_color(CMK_WIDGET(self), "primary");
-		cairo_set_source_clutter_color(cr, color);
+		ClutterColor final;
+		if(cmk_widget_get_disabled(CMK_WIDGET(self)))
+			cmk_disabled_color(&final, color);
+		else
+			cmk_copy_color(&final, color);
+		cairo_set_source_clutter_color(cr, &final);
 		cairo_paint(cr);
 	}
 	else if(private->type == CMK_BUTTON_TYPE_ACTION)
@@ -403,9 +415,10 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	}
 
 	// Paint hover / selected color
-	if(private->hover
+	if((private->hover
 	|| private->selected
 	|| clutter_actor_has_key_focus(CLUTTER_ACTOR(self)))
+	   && !cmk_widget_get_disabled(CMK_WIDGET(self)))
 	{
 		const gchar *color = private->hover ? "hover" : "selected";
 		cairo_set_source_clutter_color(cr, cmk_widget_get_default_named_color(CMK_WIDGET(self), color));
@@ -526,7 +539,8 @@ const gchar * cmk_button_get_name(CmkButton *self)
 
 static gboolean on_key_pressed(ClutterActor *self_, ClutterKeyEvent *event)
 {
-	if(event->keyval == CLUTTER_KEY_Return)
+	if(event->keyval == CLUTTER_KEY_Return
+	&& !cmk_widget_get_disabled(CMK_WIDGET(self_)))
 	{
 		clutter_point_init(&PRIVATE(CMK_BUTTON(self_))->clickPoint, -1, -1);
 		clutter_timeline_stop(PRIVATE(CMK_BUTTON(self_))->downAnim);
@@ -542,13 +556,13 @@ static gboolean on_key_pressed(ClutterActor *self_, ClutterKeyEvent *event)
 
 static void on_key_focus(ClutterActor *self_)
 {
-	clutter_content_invalidate(clutter_actor_get_content(self_));
+	if(!cmk_widget_get_disabled(CMK_WIDGET(self_)))
+		clutter_content_invalidate(clutter_actor_get_content(self_));
 	CLUTTER_ACTOR_CLASS(cmk_button_parent_class)->key_focus_in(self_);
 }
 
 static void on_key_unfocus(ClutterActor *self_)
 {
-	ClutterContent *content = clutter_actor_get_content(self_);
-	if(content)
-		clutter_content_invalidate(content);
+	if(!cmk_widget_get_disabled(CMK_WIDGET(self_)))
+		clutter_content_invalidate(clutter_actor_get_content(self_));
 }

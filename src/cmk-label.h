@@ -137,11 +137,11 @@ void cmk_label_set_line_alignment(CmkLabel *label, PangoAlignment alignment);
 /*
  * cmk_label_set_editable:
  *
- * Equivelent to calling clutter_text_set_editable(TRUE),
- * clutter_actor_set_reactive(TRUE), and cmk_widget_set_tabbable(TRUE)
+ * Equivelent to calling clutter_text_set_editable(),
+ * clutter_actor_set_reactive(), and cmk_widget_set_tabbable()
  * on the underyling #ClutterText actor.
  */
-void cmk_label_set_editable(CmkLabel *label);
+void cmk_label_set_editable(CmkLabel *self, gboolean editable);
 
 /*
  * cmk_label_set_no_spacing:

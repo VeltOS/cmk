@@ -40,6 +40,7 @@ struct _CmkWidgetPrivate
 	GHashTable *colors;
 	gchar *backgroundColorName;
 	gboolean drawBackground;
+	int disabled; // -1 unset, 0 no, 1 yes
 	float dpScale, dpScaleCache;
 	float paddingMultiplier, bevelRadiusMultiplier;
 	float mLeft, mRight, mTop, mBottom; // Margin multiplier factors
@@ -65,6 +66,7 @@ enum
 	PROP_PADDING_MULTIPLIER,
 	PROP_BEVEL_RADIUS_MULTIPLIER,
 	PROP_TABBABLE,
+	PROP_DISABLED,
 	PROP_LAST
 };
 
@@ -209,6 +211,13 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                     "TRUE if this widget can be tabbed to",
 		                     FALSE,
 		                     G_PARAM_READWRITE);
+	
+	properties[PROP_DISABLED] =
+		g_param_spec_boolean("disabled",
+		                     "Disabled",
+		                     "TRUE if this widget is disabled",
+		                     FALSE,
+		                     G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
@@ -302,6 +311,7 @@ static void cmk_widget_init(CmkWidget *self)
 	private->dpScale = private->dpScaleCache = 1;
 	private->paddingMultiplier = -1;
 	private->bevelRadiusMultiplier = -1;
+	private->disabled = -1;
 	private->mLeft = private->mRight = private->mTop = private->mBottom = -1;
 }
 
@@ -340,6 +350,9 @@ static void cmk_widget_set_property(GObject *self_, guint propertyId, const GVal
 	case PROP_TABBABLE:
 		cmk_widget_set_tabbable(self, g_value_get_boolean(value));
 		break;
+	case PROP_DISABLED:
+		cmk_widget_set_disabled(self, g_value_get_boolean(value));
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
 		break;
@@ -370,6 +383,9 @@ static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *va
 		break;
 	case PROP_TABBABLE:
 		g_value_set_boolean(value, PRIVATE(self)->tabbable);
+		break;
+	case PROP_DISABLED:
+		g_value_set_boolean(value, PRIVATE(self)->disabled);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
@@ -431,6 +447,11 @@ static void on_style_parent_property_changed(CmkWidget *self, guint flags)
 	{
 		if(private->bevelRadiusMultiplier >= 0)
 			flags &= ~CMK_STYLE_FLAG_BEVEL_MUL;
+	}
+	if(flags & CMK_STYLE_FLAG_DISABLED)
+	{
+		if(private->disabled >= 0)
+			flags &= ~CMK_STYLE_FLAG_DISABLED;
 	}
 	
 	dmsg(self, "%p: propagating style changes from parent (%i)", self, flags);
@@ -530,6 +551,10 @@ static void on_styles_changed(CmkWidget *self, guint flags)
 	if(flags & CMK_STYLE_FLAG_PADDING_MUL)
 	{
 		clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
+	}
+	if(flags & CMK_STYLE_FLAG_DISABLED)
+	{
+		clutter_actor_queue_redraw(CLUTTER_ACTOR(self));
 	}
 }
 
@@ -756,6 +781,30 @@ void cmk_widget_set_margin(CmkWidget *self, float left, gfloat right, gfloat top
 		bottom * dp,
 	};
 	clutter_actor_set_margin(CLUTTER_ACTOR(self), &margin);
+}
+
+void cmk_widget_set_disabled(CmkWidget *self, int disabled)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	if(PRIVATE(self)->disabled == disabled)
+		return;
+	PRIVATE(self)->disabled = disabled;
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_DISABLED]);
+	update_style_properties(self, CMK_STYLE_FLAG_DISABLED);
+}
+
+gboolean cmk_widget_get_disabled(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), FALSE);
+	CmkWidgetPrivate *private = PRIVATE(self);
+	if(G_UNLIKELY(private->disposed))
+		return FALSE;
+	else if(private->disabled >= 0)
+		return private->disabled;
+	else if(private->actualStyleParent)
+		return cmk_widget_get_disabled(private->actualStyleParent);
+	else
+		return FALSE;
 }
 
 void cmk_widget_replace(CmkWidget *self, CmkWidget *replacement)
@@ -1096,4 +1145,25 @@ static void cmk_color_free(CmkColor *color)
 		clutter_color_free(color->color);
 	g_free(color->link);
 	g_free(color);;
+}
+
+void cmk_disabled_color(ClutterColor *dest, const ClutterColor *source)
+{
+	dest->alpha = source->alpha * 0.5;
+	float avg = (source->red * 0.41)
+	            + (source->green * 0.92)
+	            + (source->blue * 0.27);
+	if(avg > 255)
+		avg = 255;
+	dest->red = avg;
+	dest->green = avg;
+	dest->blue = avg;
+}
+
+void cmk_copy_color(ClutterColor *dest, const ClutterColor *source)
+{
+	dest->alpha = source->alpha;
+	dest->red = source->red;
+	dest->green = source->green;
+	dest->blue = source->blue;
 }

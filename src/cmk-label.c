@@ -14,6 +14,7 @@ struct _CmkLabelPrivate
 	ClutterTimeline *timeline;
 	gboolean usingSystemSize;
 	gboolean nospacing;
+	gboolean editable;
 	float size, timelineStartSize, timelineEndSize;
 };
 
@@ -35,6 +36,7 @@ static void cmk_label_get_preferred_height(ClutterActor *self_, float forWidth, 
 static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static void on_styles_changed(CmkWidget *self_, guint flags);
 static void on_clutter_settings_changed(CmkLabel *self);
+static void set_editable_internal(CmkLabel *self, gboolean editable);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkLabel, cmk_label, CMK_TYPE_WIDGET);
 #define PRIVATE(text) ((CmkLabelPrivate *)cmk_label_get_instance_private(text))
@@ -193,13 +195,23 @@ static void cmk_label_allocate(ClutterActor *self_, const ClutterActorBox *box, 
 static void on_styles_changed(CmkWidget *self_, guint flags)
 {
 	CMK_WIDGET_CLASS(cmk_label_parent_class)->styles_changed(self_, flags);
-	if((flags & CMK_STYLE_FLAG_COLORS))
+	if((flags & CMK_STYLE_FLAG_COLORS)
+	|| (flags & CMK_STYLE_FLAG_DISABLED))
 	{
 		const ClutterColor *color = cmk_widget_get_default_named_color(self_, "foreground");
-		clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
+		if(cmk_widget_get_disabled(self_))
+		{
+			ClutterColor final;
+			cmk_disabled_color(&final, color);
+			clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, &final);
+		}
+		else
+			clutter_text_set_color(PRIVATE(CMK_LABEL(self_))->text, color);
 	}
 	if(flags & CMK_STYLE_FLAG_DP)
 		cmk_label_set_font_size(CMK_LABEL(self_), PRIVATE(CMK_LABEL(self_))->size);
+	if((flags & CMK_STYLE_FLAG_DISABLED) && PRIVATE(CMK_LABEL(self_))->editable)
+		set_editable_internal(CMK_LABEL(self_), !cmk_widget_get_disabled(self_));
 }
 
 static void on_clutter_settings_changed(CmkLabel *self)
@@ -332,12 +344,23 @@ void cmk_label_set_line_alignment(CmkLabel *self, PangoAlignment alignment)
 	clutter_text_set_line_alignment(PRIVATE(self)->text, alignment);
 }
 
-void cmk_label_set_editable(CmkLabel *self)
+static void set_editable_internal(CmkLabel *self, gboolean editable)
+{
+	clutter_text_set_editable(PRIVATE(self)->text, editable);
+	clutter_actor_set_reactive(CLUTTER_ACTOR(PRIVATE(self)->text), editable);
+	cmk_widget_set_tabbable(CMK_WIDGET(self), editable);
+}
+
+void cmk_label_set_editable(CmkLabel *self, gboolean editable)
 {
 	g_return_if_fail(CMK_IS_LABEL(self));
-	clutter_text_set_editable(PRIVATE(self)->text, TRUE);
-	clutter_actor_set_reactive(CLUTTER_ACTOR(PRIVATE(self)->text), TRUE);
-	cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
+	if(PRIVATE(self)->editable != editable)
+	{
+		PRIVATE(self)->editable = editable;
+		if(editable && cmk_widget_get_disabled(CMK_WIDGET(self)))
+			return;
+		set_editable_internal(self, editable);
+	}
 }
 
 void cmk_label_set_no_spacing(CmkLabel *self, gboolean nospacing)

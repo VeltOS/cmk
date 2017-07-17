@@ -62,6 +62,7 @@ static void cmk_textfield_set_property(GObject *self_, guint propertyId, const G
 static void cmk_textfield_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void cmk_textfield_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
 static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
+static void on_styles_changed(CmkWidget *self_, guint flags);
 static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline);
 static void on_input_focus_in(CmkTextfield *self);
 static void on_input_focus_out(CmkTextfield *self);
@@ -88,6 +89,8 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 	actorClass->get_preferred_width = cmk_textfield_get_preferred_width;
 	actorClass->get_preferred_height = cmk_textfield_get_preferred_height;
 	actorClass->allocate = cmk_textfield_allocate;
+	
+	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 	
 	properties[PROP_NAME] =
 		g_param_spec_string("name",
@@ -134,7 +137,7 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 static void cmk_textfield_init(CmkTextfield *self)
 {
 	CmkTextfieldPrivate *private = PRIVATE(self);
-	cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
+	//cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
 	private->showClear = TRUE;
 
 	private->focusTimeline = clutter_timeline_new(TRANS_TIME);
@@ -143,7 +146,7 @@ static void cmk_textfield_init(CmkTextfield *self)
 	
 	private->input = cmk_label_new();
 	cmk_label_set_font_size(private->input, INPUT_LABEL_SIZE);
-	cmk_label_set_editable(private->input);
+	cmk_label_set_editable(private->input, TRUE);
 	cmk_label_set_no_spacing(private->input, TRUE);
 	ClutterText *inputClutterText = cmk_label_get_clutter_text(private->input);
 	clutter_text_set_single_line_mode(inputClutterText, TRUE);
@@ -271,6 +274,21 @@ static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWi
 	*minHeight = *natHeight = CMK_DP(self_, height);
 }
 
+static void on_styles_changed(CmkWidget *self_, guint flags)
+{
+	CMK_WIDGET_CLASS(cmk_textfield_parent_class)->styles_changed(self_, flags);
+	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
+	if((flags & CMK_STYLE_FLAG_DISABLED))
+	{
+		//cmk_widget_set_tabbable(self_, !cmk_widget_get_disabled(self_));
+		gboolean disabled = cmk_widget_get_disabled(self_);
+		cmk_widget_set_tabbable(CMK_WIDGET(private->input), !disabled);
+		clutter_actor_set_reactive(CLUTTER_ACTOR(private->input), !disabled);
+		if(private->focus)
+			on_input_focus_out(CMK_TEXTFIELD(self_));
+	}
+}
+
 static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline)
 {
 	CmkTextfieldPrivate *private = PRIVATE(self);
@@ -279,6 +297,8 @@ static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *
 
 static void on_input_focus_in(CmkTextfield *self)
 {
+	if(cmk_widget_get_disabled(CMK_WIDGET(self)))
+		return;
 	CmkTextfieldPrivate *private = PRIVATE(self);
 	private->focus = TRUE;
 	clutter_timeline_set_direction(private->focusTimeline, CLUTTER_TIMELINE_FORWARD);
@@ -309,6 +329,8 @@ static void on_input_focus_in(CmkTextfield *self)
 static void on_input_focus_out(CmkTextfield *self)
 {
 	CmkTextfieldPrivate *private = PRIVATE(self);
+	if(!private->focus)
+		return;
 	private->focus = FALSE;
 	clutter_timeline_set_direction(private->focusTimeline, CLUTTER_TIMELINE_BACKWARD);
 	clutter_timeline_stop(private->focusTimeline);
@@ -407,12 +429,6 @@ static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *b
 	}
 	
 	CLUTTER_ACTOR_CLASS(cmk_textfield_parent_class)->allocate(self_, box, flags);
-}
-
-static void on_styles_changed(CmkWidget *self_, guint flags)
-{
-	CMK_WIDGET_CLASS(cmk_textfield_parent_class)->styles_changed(self_, flags);
-	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
 }
 
 void cmk_textfield_set_text(CmkTextfield *self, const gchar *text)

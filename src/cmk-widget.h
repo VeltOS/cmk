@@ -74,7 +74,8 @@ enum
 	CMK_STYLE_FLAG_PADDING_MUL = 1<<1,
 	CMK_STYLE_FLAG_BEVEL_MUL = 1<<2,
 	CMK_STYLE_FLAG_DP = 1<<3,
-	CMK_STYLE_FLAG_ALL = (1<<4)-1,
+	CMK_STYLE_FLAG_DISABLED = 1<<4,
+	CMK_STYLE_FLAG_ALL = (1<<5)-1,
 } CmkStyleFlag;
 
 typedef struct _CmkWidgetClass CmkWidgetClass;
@@ -308,6 +309,27 @@ float cmk_widget_get_padding_multiplier(CmkWidget *widget);
  */
 void cmk_widget_set_margin(CmkWidget *widget, float left, float right, float top, float bottom);
 
+/*
+ * cmk_widget_set_disabled:
+ * @disabled: 1 (%TRUE) for disabled, 0 (%FALSE) for enabled, -1 to inherit
+ *            from the style parent
+ *
+ * Sets or unsets the disabled status on the widget (and, by style
+ * inheritance, its child widgets). Widget implementations should
+ * listen for the CMK_STYLE_FLAG_DISABLED flag in their
+ * CmkWidgetClass.styles_changed() implementation and update their
+ * widgets accordingly.
+ */
+void cmk_widget_set_disabled(CmkWidget *widget, int disabled);
+
+/*
+ * cmk_widget_get_disabled:
+ *
+ * Gets the disabled status of the widget. Returns TRUE if this
+ * widget or a widget in its style parent heirarchy is disabled.
+ */
+gboolean cmk_widget_get_disabled(CmkWidget *widget);
+
 /**
  * cmk_widget_replace:
  * @widget: The widget to be replaced
@@ -476,6 +498,22 @@ void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata);
  * paired with a call to grab set to %FALSE.
  */
 void cmk_grab(gboolean grab);
+
+/**
+ * cmk_disabled_color:
+ *
+ * Converts @source into a "disabled" conversion of that color.
+ * It's basically just RGB to grayscale, but a bit brighter and
+ * opacity is reduced slightly.
+ */
+void cmk_disabled_color(ClutterColor *dest, const ClutterColor *source);
+
+/*
+ * cmk_copy_color:
+ *
+ * Copies @source to @dest.
+ */
+void cmk_copy_color(ClutterColor *dest, const ClutterColor *source);
 
 G_END_DECLS
 
