@@ -24,6 +24,9 @@ struct _CmkScrollBoxPrivate
 	CmkShadoutil *shadow;
 	gboolean lShad, rShad, tShad, bShad;
 	gboolean lShadDraw, rShadDraw, tShadDraw, bShadDraw;
+	
+	ClutterStage *lastStage;
+	guint stageFocusSignalId;
 };
 
 enum
@@ -38,10 +41,13 @@ static GParamSpec *properties[PROP_LAST];
 static void cmk_scroll_box_dispose(GObject *self_);
 static void cmk_scroll_box_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
 static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
+static void on_map(ClutterActor *self_);
+static void on_unmap(ClutterActor *self_);
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static void on_queue_relayout(ClutterActor *self_);
 static void on_paint(ClutterActor *self_);
 static gboolean on_scroll(ClutterActor *self_, ClutterScrollEvent *event);
+static void scroll_to_actor(CmkScrollBox *self, ClutterActor *scrollto);
 static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean exact);
 static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 
@@ -61,12 +67,14 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 	base->dispose = cmk_scroll_box_dispose;
 
 	ClutterActorClass *actorClass = CLUTTER_ACTOR_CLASS(class);
+	actorClass->map = on_map;
+	actorClass->unmap = on_unmap;
 	actorClass->allocate = on_allocate;
 	//actorClass->queue_relayout = on_queue_relayout;
 	actorClass->paint = on_paint;
 	actorClass->scroll_event = on_scroll;
 	
-	CMK_WIDGET_CLASS(class)->key_focus_changed = on_key_focus_changed;
+	//CMK_WIDGET_CLASS(class)->key_focus_changed = on_key_focus_changed;
 	
 	properties[PROP_SCROLL_MODE] = g_param_spec_flags("scroll-mode", "scroll mode", "scrolling mode", CLUTTER_TYPE_SCROLL_MODE, CLUTTER_SCROLL_BOTH, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 	
@@ -96,6 +104,9 @@ static void cmk_scroll_box_dispose(GObject *self_)
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
 	g_clear_object(&private->shadow);
 	g_clear_pointer(&private->pipe, cogl_object_unref);
+	if(private->stageFocusSignalId)
+		g_signal_handler_disconnect(private->lastStage, private->stageFocusSignalId);
+	private->stageFocusSignalId = 0;
 	G_OBJECT_CLASS(cmk_scroll_box_parent_class)->dispose(self_);
 }
 
@@ -129,6 +140,32 @@ static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const 
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self_, propertyId, pspec);
 		break;
 	}
+}
+
+static void on_stage_focus_changed(CmkScrollBox *self, GParamSpec *spec, ClutterStage *stage)
+{
+	ClutterActor *focused = clutter_stage_get_key_focus(stage);
+	if(clutter_actor_contains(CLUTTER_ACTOR(self), focused))
+		scroll_to_actor(self, focused);
+}
+
+static void on_map(ClutterActor *self_)
+{
+	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->map(self_);
+	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+	if(private->stageFocusSignalId)
+		g_signal_handler_disconnect(private->lastStage, private->stageFocusSignalId);
+	private->lastStage = (ClutterStage *)clutter_actor_get_stage(self_);
+	private->stageFocusSignalId = g_signal_connect_swapped(private->lastStage, "notify::key-focus", G_CALLBACK(on_stage_focus_changed), self_);
+}
+
+static void on_unmap(ClutterActor *self_)
+{
+	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->unmap(self_);
+	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+	if(private->stageFocusSignalId)
+		g_signal_handler_disconnect(private->lastStage, private->stageFocusSignalId);
+	private->stageFocusSignalId = 0;
 }
 
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
@@ -381,7 +418,6 @@ static void scroll_to_actor(CmkScrollBox *self, ClutterActor *scrollto)
 
 static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus)
 {
-	scroll_to_actor(CMK_SCROLL_BOX(self), newfocus);
 }
 
 void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *self, gboolean show)

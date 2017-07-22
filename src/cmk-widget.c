@@ -45,7 +45,7 @@ struct _CmkWidgetPrivate
 	float paddingMultiplier, bevelRadiusMultiplier;
 	float mLeft, mRight, mTop, mBottom; // Margin multiplier factors
 	
-	gboolean tabbable;
+	gboolean tabbable, justTabbed;
 
 	gboolean disposed; // Various callbacks (ex clutter canvas draws) like to emit even after their actor has been disposed. This is checked to avoid runtime "CRITICAL" messages on disposed objects (and unnecessary processing)
 	gboolean debug;
@@ -91,10 +91,11 @@ static void on_styles_changed(CmkWidget *self, guint flags);
 static void update_actual_style_parent(CmkWidget *self);
 static void update_background_color(CmkWidget *self);
 static void update_dp_cache(CmkWidget *self);
-static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
+//static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 //static void update_named_background_color(CmkWidget *self);
 static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event);
-static void on_key_focus(ClutterActor *self_);
+static void on_key_focus_out(ClutterActor *self_);
+static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event);
 static void cmk_color_free(CmkColor *color);
 #define dmsg(self, fmt...) if(PRIVATE((CmkWidget *)(self))->debug){g_message("CmkWidget: " fmt);}
 
@@ -113,12 +114,10 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	base->get_property = cmk_widget_get_property;
 	base->set_property = cmk_widget_set_property;
 	
-	CLUTTER_ACTOR_CLASS(class)->parent_set = on_parent_changed;
 	CLUTTER_ACTOR_CLASS(class)->key_press_event = on_key_pressed;
-	CLUTTER_ACTOR_CLASS(class)->key_focus_in = on_key_focus;
+	CLUTTER_ACTOR_CLASS(class)->button_press_event = on_button_press;
 	
 	class->styles_changed = on_styles_changed;
-	class->key_focus_changed = on_key_focus_changed;
 	
 	/**
 	 * CmkWidget:style-parent:
@@ -253,14 +252,14 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	 * Emitted when a #CmkWidget in the actor heirarchy below this widget
 	 * gains key focus.
 	 */
-	signals[SIGNAL_KEY_FOCUS_CHANGED] =
-		g_signal_new("key-focus-changed",
-		             G_TYPE_FROM_CLASS(class),
-		             G_SIGNAL_RUN_FIRST,
-		             G_STRUCT_OFFSET(CmkWidgetClass, key_focus_changed),
-		             NULL, NULL, NULL,
-		             G_TYPE_NONE,
-		             1, CLUTTER_TYPE_ACTOR);
+	//signals[SIGNAL_KEY_FOCUS_CHANGED] =
+	//	g_signal_new("key-focus-changed",
+	//	             G_TYPE_FROM_CLASS(class),
+	//	             G_SIGNAL_RUN_FIRST,
+	//	             G_STRUCT_OFFSET(CmkWidgetClass, key_focus_changed),
+	//	             NULL, NULL, NULL,
+	//	             G_TYPE_NONE,
+	//	             1, CLUTTER_TYPE_ACTOR);
 
 	/**
 	 * CmkWidget::replace:
@@ -313,6 +312,12 @@ static void cmk_widget_init(CmkWidget *self)
 	private->bevelRadiusMultiplier = -1;
 	private->disabled = -1;
 	private->mLeft = private->mRight = private->mTop = private->mBottom = -1;
+
+	// key-focus-out and parent-set are Run Last, so can use signal
+	// connect to make sure this happens before subclasse's class
+	// handlers are run.
+	g_signal_connect(self, "key-focus-out", G_CALLBACK(on_key_focus_out), NULL);
+	g_signal_connect(self, "parent-set", G_CALLBACK(on_parent_changed), NULL);
 }
 
 static void cmk_widget_dispose(GObject *self_)
@@ -878,20 +883,17 @@ gboolean cmk_widget_get_tabbable(CmkWidget *self)
 	return PRIVATE(self)->tabbable;
 }
 
-
-
-
-static GList *tabStack = NULL;
-
-void cmk_widget_push_tab_modal(CmkWidget *widget)
+gboolean cmk_widget_get_just_tabbed(CmkWidget *self)
 {
-	tabStack = g_list_prepend(tabStack, widget);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), FALSE);
+	return PRIVATE(self)->justTabbed;
 }
 
-void cmk_widget_pop_tab_modal()
-{
-	tabStack = g_list_delete_link(tabStack, tabStack);
-}
+// Foucs stack globals
+static GList *focusStack = NULL;
+static guint focusStackTopMappedSignalId = 0;
+static CmkGrabHandler grabHandler = NULL;
+static gpointer grabHandlerData = NULL;
 
 /*
  * get_next_tabstop finds the next CmkWidget in the Clutter scene
@@ -903,158 +905,171 @@ void cmk_widget_pop_tab_modal()
  */
 static ClutterActor * get_next_tabstop_dfs(ClutterActor *start)
 {
-	if(CMK_IS_WIDGET(start) && cmk_widget_get_tabbable(CMK_WIDGET(start)))
+	if(!clutter_actor_is_mapped(start))
+		return NULL;
+	
+	if(CMK_IS_WIDGET(start)
+	&& PRIVATE(CMK_WIDGET(start))->tabbable)
 		return start;
+	
 	ClutterActor *next = clutter_actor_get_first_child(start);
+	ClutterActor *stop;
 	while(next)
 	{
-		ClutterActor *stop = get_next_tabstop_dfs(next);
-		if(stop)
+		if((stop = get_next_tabstop_dfs(next)))
 			return stop;
 		next = clutter_actor_get_next_sibling(next);
 	}
-	return NULL;
-}
-
-static ClutterActor * get_next_tabstop_up(ClutterActor *start)
-{
-	if(!start)
-		return NULL;
-	ClutterActor *next = start;
-	while((next = clutter_actor_get_next_sibling(next)))
-	{
-		ClutterActor *stop = get_next_tabstop_dfs(next);
-		if(stop)
-			return stop;
-	}
-	
-	ClutterActor *parent = clutter_actor_get_parent(start);
-	if(parent)
-		return get_next_tabstop_up(parent);
 	return NULL;
 }
 
 static ClutterActor * get_next_tabstop(ClutterActor *start)
 {
-	ClutterActor *next = clutter_actor_get_first_child(start);
+	ClutterActor *stop, *next;
+	
+	// Search the children of @start
+	next = clutter_actor_get_first_child(start);
 	while(next)
 	{
-		ClutterActor *stop = get_next_tabstop_dfs(next);
-		if(stop)
+		if((stop = get_next_tabstop_dfs(next)))
 			return stop;
 		next = clutter_actor_get_next_sibling(next);
 	}
 	
-	return get_next_tabstop_up(start);
+	ClutterActor *layer = start;
+	while(layer)
+	{
+		// Make sure the new layer is in the focus stack
+		if(focusStack
+		&& (layer == (ClutterActor *)focusStack->data || !clutter_actor_contains(focusStack->data, layer)))
+			break;
+		
+		// Search the siblings of @start
+		next = layer;
+		while((next = clutter_actor_get_next_sibling(next)))
+		{
+			if((stop = get_next_tabstop_dfs(next)))
+				return stop;
+		}
+		
+		// Go up a level and try again
+		layer = clutter_actor_get_parent(layer);
+	}
+	
+	return NULL;
 }
 
 static ClutterActor * get_next_tabstop_dfs_rev(ClutterActor *start)
 {
-	if(CMK_IS_WIDGET(start) && cmk_widget_get_tabbable(CMK_WIDGET(start)))
+	if(!clutter_actor_is_mapped(start))
+		return NULL;
+	
+	if(CMK_IS_WIDGET(start)
+	&& PRIVATE(CMK_WIDGET(start))->tabbable)
 		return start;
+	
 	ClutterActor *next = clutter_actor_get_last_child(start);
+	ClutterActor *stop;
 	while(next)
 	{
-		ClutterActor *stop = get_next_tabstop_dfs_rev(next);
-		if(stop)
+		if((stop = get_next_tabstop_dfs_rev(next)))
 			return stop;
 		next = clutter_actor_get_previous_sibling(next);
 	}
-	return NULL;
-}
-
-static ClutterActor * get_next_tabstop_up_rev(ClutterActor *start)
-{
-	if(!start)
-		return NULL;
-	ClutterActor *next = start;
-	while((next = clutter_actor_get_previous_sibling(next)))
-	{
-		ClutterActor *stop = get_next_tabstop_dfs_rev(next);
-		if(stop)
-			return stop;
-	}
-	
-	ClutterActor *parent = clutter_actor_get_parent(start);
-	if(parent)
-		return get_next_tabstop_up_rev(parent);
 	return NULL;
 }
 
 static ClutterActor * get_next_tabstop_rev(ClutterActor *start)
 {
-	ClutterActor *next = clutter_actor_get_last_child(start);
+	ClutterActor *stop, *next;
+	
+	// Search the children of @start
+	next = clutter_actor_get_last_child(start);
 	while(next)
 	{
-		ClutterActor *stop = get_next_tabstop_dfs_rev(next);
-		if(stop)
+		if((stop = get_next_tabstop_dfs_rev(next)))
 			return stop;
 		next = clutter_actor_get_previous_sibling(next);
 	}
 	
-	return get_next_tabstop_up_rev(start);
+	ClutterActor *layer = start;
+	while(layer)
+	{
+		// Make sure the new layer is in the focus stack
+		if(focusStack
+		&& (layer == (ClutterActor *)focusStack->data || !clutter_actor_contains(focusStack->data, layer)))
+			break;
+		
+		// Search the siblings of @start
+		next = layer;
+		while((next = clutter_actor_get_previous_sibling(next)))
+		{
+			if((stop = get_next_tabstop_dfs_rev(next)))
+				return stop;
+		}
+		
+		// Go up a level and try again
+		layer = clutter_actor_get_parent(layer);
+	}
+	
+	return NULL;
 }
 
-static GList *focusStack = NULL;
+static ClutterActor * get_next_tabstop_full(ClutterActor *start, gboolean rev)
+{
+	ClutterActor * (*next_tabstop)() = rev ? get_next_tabstop_rev : get_next_tabstop;
+	
+	ClutterActor *a = next_tabstop(start);
+	if(!a)
+	{
+		if(focusStack)
+		{
+			a = focusStack->data;
+			if(!cmk_widget_get_tabbable(CMK_WIDGET(a)))
+				a = next_tabstop(a);
+		}
+		else
+			a = next_tabstop(clutter_actor_get_stage(start));
+	}
+	return a;
+}
 
 static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event)
 {
 	if(event->keyval == CLUTTER_KEY_Tab || event->keyval == CLUTTER_KEY_ISO_Left_Tab)
 	{
-		ClutterActor *a;
-		if((event->modifier_state & CLUTTER_SHIFT_MASK) || event->keyval == CLUTTER_KEY_ISO_Left_Tab)
-		{
-			a = get_next_tabstop_rev(event->source);
-			if(!a && focusStack)
-				a = focusStack->data;
-			if(!a)
-				a = get_next_tabstop_rev(clutter_actor_get_stage(event->source));
-		}
-		else
-		{
-			a = get_next_tabstop(event->source);
-			if(!a && focusStack)
-				a = focusStack->data;
-			if(!a)
-				a = get_next_tabstop(clutter_actor_get_stage(event->source));
-		}
+		ClutterActor *a = get_next_tabstop_full(
+			event->source,
+			(event->modifier_state & CLUTTER_SHIFT_MASK));
+		if(CMK_IS_WIDGET(a))
+			PRIVATE(CMK_WIDGET(a))->justTabbed = TRUE;
 		clutter_actor_grab_key_focus(a);
 		return CLUTTER_EVENT_STOP;
 	}
 	return CLUTTER_EVENT_PROPAGATE;
 }
 
-static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus)
+static void on_key_focus_out(ClutterActor *self_)
 {
-	ClutterActor *parent = clutter_actor_get_parent(CLUTTER_ACTOR(self));
-	if(CMK_IS_WIDGET(parent))
-		g_signal_emit(parent, signals[SIGNAL_KEY_FOCUS_CHANGED], 0, newfocus);
+	PRIVATE(CMK_WIDGET(self_))->justTabbed = FALSE;
 }
 
-static void on_key_focus(ClutterActor *self_)
+static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
 {
-	on_key_focus_changed(CMK_WIDGET(self_), self_);
+	// The default action for a reactive actor is to just grab
+	// keyboard focus. Some widgets, like CmkTextfield, have
+	// special considerations for gaining focus (namely, the fact
+	// that the widget itself doesn't take keyboard focus, the
+	// ClutterText child widget does). Widgets such as those
+	// should set grab focus themselves.
+	clutter_actor_grab_key_focus(self_);
+	return CLUTTER_EVENT_STOP;
 }
-
-
-guint focusStackTopMappedSignalId = 0;
 
 static void on_focus_stack_top_mapped(ClutterActor *actor)
 {
 	if(clutter_actor_is_mapped(actor))
 		clutter_actor_grab_key_focus(actor);
-}
-
-guint cmk_redirect_keyboard_focus(ClutterActor *actor, ClutterActor *redirection)
-{
-	return g_signal_connect_swapped(actor, "key-focus-in", G_CALLBACK(clutter_actor_grab_key_focus), redirection);
-}
-
-guint cmk_focus_on_mapped(ClutterActor *actor)
-{
-	guint x = g_signal_connect(actor, "notify::mapped", G_CALLBACK(on_focus_stack_top_mapped), NULL);
-	on_focus_stack_top_mapped(actor);
-	return x;
 }
 
 void cmk_focus_stack_push(CmkWidget *widget)
@@ -1064,6 +1079,7 @@ void cmk_focus_stack_push(CmkWidget *widget)
 	focusStack = g_list_prepend(focusStack, widget);
 	focusStackTopMappedSignalId = g_signal_connect(widget, "notify::mapped", G_CALLBACK(on_focus_stack_top_mapped), NULL);
 	on_focus_stack_top_mapped(CLUTTER_ACTOR(widget));
+	cmk_grab(TRUE);
 }
 
 void cmk_focus_stack_pop(CmkWidget *widget)
@@ -1075,19 +1091,26 @@ void cmk_focus_stack_pop(CmkWidget *widget)
 		g_signal_handler_disconnect(focusStack->data, focusStackTopMappedSignalId);
 	focusStackTopMappedSignalId = 0;
 	focusStack = g_list_delete_link(focusStack, focusStack);
-	if(focusStack)
+	cmk_grab(FALSE);
+	if(!focusStack)
 		return;
-	focusStackTopMappedSignalId = g_signal_connect(widget, "notify::mapped", G_CALLBACK(on_focus_stack_top_mapped), NULL);
-	on_focus_stack_top_mapped(CLUTTER_ACTOR(widget));
+	focusStackTopMappedSignalId = g_signal_connect(focusStack->data, "notify::mapped", G_CALLBACK(on_focus_stack_top_mapped), NULL);
+	on_focus_stack_top_mapped(CLUTTER_ACTOR(focusStack->data));
 }
 
-
-
-void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color)
+void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata)
 {
-	if(!color) return; // Don't produce warnings because this happens naturally sometimes during object destruction
-	cairo_set_source_rgba(cr, color->red/255.0, color->green/255.0, color->blue/255.0, color->alpha/255.0);
+	grabHandler = handler;
+	grabHandlerData = userdata;
 }
+
+void cmk_grab(gboolean grab)
+{
+	if(grabHandler)
+		grabHandler(grab, grabHandlerData);
+}
+
+
 
 void cmk_scale_actor_box(ClutterActorBox *b, float scale, gboolean move)
 {
@@ -1106,20 +1129,33 @@ void cmk_scale_actor_box(ClutterActorBox *b, float scale, gboolean move)
 	b->y2 = b->y1 + height*scale;
 }
 
-static CmkGrabHandler grabHandler = NULL;
-static gpointer grabHandlerData = NULL;
-
-void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata)
+void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color)
 {
-	grabHandler = handler;
-	grabHandlerData = userdata;
+	if(!color) return; // Don't produce warnings because this happens naturally sometimes during object destruction
+	cairo_set_source_rgba(cr, color->red/255.0, color->green/255.0, color->blue/255.0, color->alpha/255.0);
 }
 
-void cmk_grab(gboolean grab)
+void cmk_disabled_color(ClutterColor *dest, const ClutterColor *source)
 {
-	if(grabHandler)
-		grabHandler(grab, grabHandlerData);
+	dest->alpha = source->alpha * 0.5;
+	float avg = (source->red * 0.41)
+	            + (source->green * 0.92)
+	            + (source->blue * 0.27);
+	if(avg > 255)
+		avg = 255;
+	dest->red = avg;
+	dest->green = avg;
+	dest->blue = avg;
 }
+
+void cmk_copy_color(ClutterColor *dest, const ClutterColor *source)
+{
+	dest->alpha = source->alpha;
+	dest->red = source->red;
+	dest->green = source->green;
+	dest->blue = source->blue;
+}
+
 
 /*
  * Using regular g_debug or g_message isn't always useful on widgets
@@ -1145,25 +1181,4 @@ static void cmk_color_free(CmkColor *color)
 		clutter_color_free(color->color);
 	g_free(color->link);
 	g_free(color);;
-}
-
-void cmk_disabled_color(ClutterColor *dest, const ClutterColor *source)
-{
-	dest->alpha = source->alpha * 0.5;
-	float avg = (source->red * 0.41)
-	            + (source->green * 0.92)
-	            + (source->blue * 0.27);
-	if(avg > 255)
-		avg = 255;
-	dest->red = avg;
-	dest->green = avg;
-	dest->blue = avg;
-}
-
-void cmk_copy_color(ClutterColor *dest, const ClutterColor *source)
-{
-	dest->alpha = source->alpha;
-	dest->red = source->red;
-	dest->green = source->green;
-	dest->blue = source->blue;
 }

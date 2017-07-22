@@ -54,6 +54,7 @@ CmkWidget * cmk_window_new(const gchar *title, float width, float height, Clutte
 
 	cmk_widget_set_draw_background_color(bg, TRUE);
 	clutter_actor_add_child(stage, CLUTTER_ACTOR(bg));
+	cmk_focus_stack_push(bg);
 	clutter_actor_show(stage);
 	
 	// TODO: This glitches during maximize/unmaximize. How to fix?

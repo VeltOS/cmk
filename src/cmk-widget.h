@@ -52,6 +52,12 @@ G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
  * (depending on the widgets) are: "background", "foreground", "primary",
  * "accent", "error", "hover", and "selected". You should at least set all of
  * these colors at the start of your program.
+ *
+ * CmkWidget subclasses must chain up to the ClutterActorClass.key_press_event()
+ * method if they override it before their key input handling logic (if any)
+ * to ensure proper tabbing support. Subclasses must chain up to the
+ * ClutterActorClass.button_press_event() method if they override it OR provide
+ * their own keyboard-focus-on-click handling.
  */
 
 /**
@@ -99,8 +105,6 @@ struct _CmkWidgetClass
 	
 	/*< public >*/
 	void (*styles_changed) (CmkWidget *self, guint flags);
-	
-	void (*key_focus_changed) (CmkWidget *self, ClutterActor *newfocus);
 	
 	void (*replace) (CmkWidget *self, CmkWidget *replacement);
 	
@@ -405,72 +409,44 @@ void cmk_widget_set_tabbable(CmkWidget *widget, gboolean tabbable);
 gboolean cmk_widget_get_tabbable(CmkWidget *widget);
 
 /**
- * cmk_widget_push_tab_modal:
+ * cmk_widget_get_just_tabbed:
  *
- * In development.
+ * Only useful for widget subclasses. Returns TRUE if this widget
+ * has just gained focus from being tabbed to. Widgets might want
+ * to use this flag to draw their widget differently so that the
+ * user can see it has keyboard focus. This will stop returning
+ * TRUE once focus has been lost.
  */
-void cmk_widget_push_tab_modal(CmkWidget *widget);
-
-/**
- * cmk_widget_pop_tab_modal:
- *
- * In development.
- */
-void cmk_widget_pop_tab_modal();
-
-/**
- * cmk_redirect_keyboard_focus:
- *
- * Whenever actor receives keyboard focus, it is immediately redirected
- * to redirection.
- */
-guint cmk_redirect_keyboard_focus(ClutterActor *actor, ClutterActor *redirection);
-
-/**
- * cmk_focus_on_mapped:
- *
- * Grabs keyboard focus for this widget whenever it becomes mapped.
- * Useful for popups.
- */
-guint cmk_focus_on_mapped(ClutterActor *actor);
+gboolean cmk_widget_get_just_tabbed(CmkWidget *widget);
 
 /**
  * cmk_focus_stack_push:
  *
- * In development.
+ * This method can be used to restrict keyboard focus to @widget
+ * and its children. If keyboard focus is not within @widget when
+ * this is called, keyboard focus is moved to @widget. Therefore
+ * it is useful to call on popups and other full-screen actors.
+ * If @widget is not mapped when this is called, focus will be
+ * brought to @widget when it is mapped. This also calls cmk_grab.
+ *
+ * In almost all cases, @widget should be a reactive
+ * (clutter_actor_set_reactive()) background/container actor.
+ *
+ * cmk_window_new() automatically calls this method on the returned
+ * window widget, so that tabbing works before anything has been clicked.
+ *
+ * Call cmk_focus_stack_pop() to undo this effect.
  */
 void cmk_focus_stack_push(CmkWidget *widget);
 
 /**
  * cmk_focus_stack_pop:
  *
- * In development.
+ * Undo the focus effect from cmk_focus_stack_push(). @widget must
+ * be the widget at the top of the stack, to ensure the correct
+ * widget is popped.
  */
 void cmk_focus_stack_pop(CmkWidget *widget);
-
-/**
- * cairo_set_source_clutter_color:
- *
- * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba().
- */
-void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
-
-/**
- * cmk_scale_actor_box:
- * @box: #ClutterActorBox to scale
- * @scale: Amount to scale
- * @move: %TRUE to scale x,y coordinates too; %FALSE to only scale size
- *
- * Convenience for scaling a #ClutterActorBox.
- */
-void cmk_scale_actor_box(ClutterActorBox *box, float scale, gboolean move);
-
-/**
- * clutter_color_blend:
- *
- * Simple 1-topalpha blend.
- */
-void clutter_color_blend(const ClutterColor *top, const ClutterColor *bottom, ClutterColor *out);
 
 /**
  * CmkGrabHandler:
@@ -498,6 +474,23 @@ void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata);
  * paired with a call to grab set to %FALSE.
  */
 void cmk_grab(gboolean grab);
+
+/**
+ * cmk_scale_actor_box:
+ * @box: #ClutterActorBox to scale
+ * @scale: Amount to scale
+ * @move: %TRUE to scale x,y coordinates too; %FALSE to only scale size
+ *
+ * Convenience for scaling a #ClutterActorBox.
+ */
+void cmk_scale_actor_box(ClutterActorBox *box, float scale, gboolean move);
+
+/**
+ * cairo_set_source_clutter_color:
+ *
+ * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba().
+ */
+void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
 
 /**
  * cmk_disabled_color:

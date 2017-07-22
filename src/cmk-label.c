@@ -84,6 +84,8 @@ static void cmk_label_init(CmkLabel *self)
 	private->text = CLUTTER_TEXT(clutter_text_new());
 	clutter_text_set_line_wrap(private->text, TRUE);
 	clutter_text_set_ellipsize(private->text, PANGO_ELLIPSIZE_NONE);
+	// Redirect keyboard focus to the ClutterText
+	g_signal_connect_swapped(self, "key-focus-in", G_CALLBACK(clutter_actor_grab_key_focus), private->text);
 	
 	PangoFontDescription *desc = pango_font_description_new();
 	clutter_text_set_font_description(private->text, desc);

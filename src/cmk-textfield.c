@@ -67,6 +67,7 @@ static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *
 static void on_input_focus_in(CmkTextfield *self);
 static void on_input_focus_out(CmkTextfield *self);
 static void on_text_changed(CmkTextfield *self, ClutterText *inputText);
+static void on_text_activate(CmkTextfield *self, ClutterText *inputText);
 static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 //static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event);
 
@@ -77,6 +78,13 @@ G_DEFINE_TYPE_WITH_PRIVATE(CmkTextfield, cmk_textfield, CMK_TYPE_WIDGET);
 CmkTextfield * cmk_textfield_new(const gchar *name, const gchar *description)
 {
 	return CMK_TEXTFIELD(g_object_new(CMK_TYPE_TEXTFIELD, "name", name, "description", description, NULL));
+}
+
+static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
+{
+	ClutterText *inputClutterText = cmk_label_get_clutter_text(PRIVATE(CMK_TEXTFIELD(self_))->input);
+	clutter_actor_grab_key_focus(CLUTTER_ACTOR(inputClutterText));
+	return CLUTTER_EVENT_STOP;
 }
 
 static void cmk_textfield_class_init(CmkTextfieldClass *class)
@@ -90,6 +98,7 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 	actorClass->get_preferred_width = cmk_textfield_get_preferred_width;
 	actorClass->get_preferred_height = cmk_textfield_get_preferred_height;
 	actorClass->allocate = cmk_textfield_allocate;
+	actorClass->button_press_event = on_button_press;
 	
 	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 	
@@ -139,6 +148,7 @@ static void cmk_textfield_init(CmkTextfield *self)
 {
 	CmkTextfieldPrivate *private = PRIVATE(self);
 	//cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
+	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
 	private->showClear = TRUE;
 
 	private->focusTimeline = clutter_timeline_new(TRANS_TIME);
@@ -150,10 +160,12 @@ static void cmk_textfield_init(CmkTextfield *self)
 	cmk_label_set_editable(private->input, TRUE);
 	cmk_label_set_no_spacing(private->input, TRUE);
 	ClutterText *inputClutterText = cmk_label_get_clutter_text(private->input);
+	//cmk_redirect_keyboard_focus(CLUTTER_ACTOR(self), CLUTTER_ACTOR(private->input));
 	clutter_text_set_single_line_mode(inputClutterText, TRUE);
 	g_signal_connect_swapped(inputClutterText, "key-focus-in", G_CALLBACK(on_input_focus_in), self);
 	g_signal_connect_swapped(inputClutterText, "key-focus-out", G_CALLBACK(on_input_focus_out), self);
 	g_signal_connect_swapped(inputClutterText, "text-changed", G_CALLBACK(on_text_changed), self);
+	g_signal_connect_swapped(inputClutterText, "activate", G_CALLBACK(on_text_activate), self);
 	
 	private->name = cmk_label_new();
 	cmk_label_set_no_spacing(private->name, TRUE);
@@ -266,7 +278,7 @@ static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWi
 	height += LABEL_PADDING;
 	height += UNDERLINE_FOCUS_SIZE;
 	
-	if(private->descriptionText)
+	if(private->descriptionText || private->showError)
 	{
 		height += LABEL_PADDING;
 		height += HELPER_LABEL_SIZE;
@@ -294,6 +306,20 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 static void on_text_changed(CmkTextfield *self, ClutterText *inputText)
 {
 	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
+}
+
+static void on_text_activate(CmkTextfield *self, ClutterText *inputText)
+{
+	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
+
+	// Emit a fake tab so that "Enter" skips to the next form item
+	ClutterKeyEvent *p = (ClutterKeyEvent *)clutter_event_new(CLUTTER_KEY_PRESS);
+	p->stage = (ClutterStage *)clutter_actor_get_stage(CLUTTER_ACTOR(self));
+	p->keyval = CLUTTER_KEY_Tab;
+	clutter_event_put((ClutterEvent *)p);
+	p->type = CLUTTER_KEY_RELEASE;
+	clutter_event_put((ClutterEvent *)p);
+	clutter_event_free((ClutterEvent *)p);
 }
 
 static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline)
@@ -426,7 +452,7 @@ static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *b
 
 	childBox.y1 += UNDERLINE_FOCUS_SIZE*dpScale;
 
-	if(private->descriptionText)
+	if(private->descriptionText || private->showError)
 	{
 		childBox.y1 += LABEL_PADDING*dpScale;
 		ClutterActorBox descriptionBox = {
