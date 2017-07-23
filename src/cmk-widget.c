@@ -87,6 +87,8 @@ static guint signals[SIGNAL_LAST];
 static void cmk_widget_dispose(GObject *self_);
 static void cmk_widget_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
 static void cmk_widget_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
+static void on_style_parent_destroy(CmkWidget *self, CmkWidget *styleParent);
+static void on_style_parent_property_changed(CmkWidget *self, guint flags);
 static void on_parent_changed(ClutterActor *self_, ClutterActor *prevParent);
 static void update_style_properties(CmkWidget *self, guint flags);
 static void on_styles_changed(CmkWidget *self, guint flags);
@@ -344,6 +346,12 @@ static void cmk_widget_dispose(GObject *self_)
 	g_clear_pointer(&private->colors, g_hash_table_unref);
 	g_clear_pointer(&private->backgroundColorName, g_free);
 	private->disposed = TRUE;
+	if(private->actualStyleParent)
+	{
+		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_destroy), self_);
+		g_signal_handlers_disconnect_by_func(private->actualStyleParent, G_CALLBACK(on_style_parent_property_changed), self_);
+		private->actualStyleParent = NULL;
+	}
 	G_OBJECT_CLASS(cmk_widget_parent_class)->dispose(self_);
 }
 
