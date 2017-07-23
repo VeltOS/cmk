@@ -144,12 +144,21 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 		             NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
+static void on_tab_next_changed(CmkTextfield *self)
+{
+	CmkWidget *next, *prev;
+	cmk_widget_get_tab_next(CMK_WIDGET(self), &next, &prev);
+	cmk_widget_set_tab_next(CMK_WIDGET(PRIVATE(self)->input), next, prev); 
+}
+
 static void cmk_textfield_init(CmkTextfield *self)
 {
 	CmkTextfieldPrivate *private = PRIVATE(self);
 	//cmk_widget_set_tabbable(CMK_WIDGET(self), TRUE);
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
 	private->showClear = TRUE;
+
+	g_signal_connect(self, "notify::tab-next", G_CALLBACK(on_tab_next_changed), NULL);
 
 	private->focusTimeline = clutter_timeline_new(TRANS_TIME);
 	clutter_timeline_set_progress_mode(private->focusTimeline, CLUTTER_EASE_OUT_QUAD);

@@ -46,6 +46,7 @@ struct _CmkWidgetPrivate
 	float mLeft, mRight, mTop, mBottom; // Margin multiplier factors
 	
 	gboolean tabbable, justTabbed;
+	CmkWidget *tabNext, *tabPrev;
 
 	gboolean disposed; // Various callbacks (ex clutter canvas draws) like to emit even after their actor has been disposed. This is checked to avoid runtime "CRITICAL" messages on disposed objects (and unnecessary processing)
 	gboolean debug;
@@ -66,6 +67,7 @@ enum
 	PROP_PADDING_MULTIPLIER,
 	PROP_BEVEL_RADIUS_MULTIPLIER,
 	PROP_TABBABLE,
+	PROP_TAB_NEXT,
 	PROP_DISABLED,
 	PROP_LAST
 };
@@ -210,6 +212,21 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                     "TRUE if this widget can be tabbed to",
 		                     FALSE,
 		                     G_PARAM_READWRITE);
+	
+	/**
+	 * CmkWidget:tab-next:
+	 *
+	 * The next widget to tab to, or NULL for auto. Do not use the
+	 * g_object_get() or set methods, use the cmk_widget_get_tab_next()
+	 * and cmk_widget_set_tab_next(). Only use this signal if you need
+	 * the notify::tab-next event.
+	 */
+	properties[PROP_TAB_NEXT] =
+		g_param_spec_object("tab-next",
+		                    "Tab Next",
+		                    "The next widget to tab to, or NULL for auto",
+		                    CMK_TYPE_WIDGET,
+		                    G_PARAM_READWRITE);
 	
 	properties[PROP_DISABLED] =
 		g_param_spec_boolean("disabled",
@@ -883,6 +900,27 @@ gboolean cmk_widget_get_tabbable(CmkWidget *self)
 	return PRIVATE(self)->tabbable;
 }
 
+void cmk_widget_set_tab_next(CmkWidget *self, CmkWidget *next, CmkWidget *prev)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	if(next == PRIVATE(self)->tabNext && prev == PRIVATE(self)->tabPrev)
+		return;
+	PRIVATE(self)->tabNext = next;
+	PRIVATE(self)->tabPrev = prev;
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_TAB_NEXT]);
+}
+
+void cmk_widget_get_tab_next(CmkWidget *self, CmkWidget **next, CmkWidget **prev)
+{
+	if(next) *next = NULL;
+	if(prev) *prev = NULL;
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	if(next)
+		*next = PRIVATE(self)->tabNext;
+	if(prev)
+		*prev = PRIVATE(self)->tabPrev;
+}
+
 gboolean cmk_widget_get_just_tabbed(CmkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), FALSE);
@@ -1038,9 +1076,26 @@ static gboolean on_key_pressed(ClutterActor *self, ClutterKeyEvent *event)
 {
 	if(event->keyval == CLUTTER_KEY_Tab || event->keyval == CLUTTER_KEY_ISO_Left_Tab)
 	{
-		ClutterActor *a = get_next_tabstop_full(
-			event->source,
-			(event->modifier_state & CLUTTER_SHIFT_MASK));
+		ClutterActor *a = NULL;
+		gboolean rev = (event->modifier_state & CLUTTER_SHIFT_MASK);
+		// Use manually specified next tabstop if available.
+		if(rev && CLUTTER_IS_ACTOR(PRIVATE(CMK_WIDGET(self))->tabPrev))
+		{
+			a = CLUTTER_ACTOR(PRIVATE(CMK_WIDGET(self))->tabPrev);
+			if(!cmk_widget_get_tabbable(CMK_WIDGET(a)))
+				a = get_next_tabstop_rev(a);
+		}
+		else if(!rev && CLUTTER_IS_ACTOR(PRIVATE(CMK_WIDGET(self))->tabNext))
+		{
+			a = CLUTTER_ACTOR(PRIVATE(CMK_WIDGET(self))->tabNext);
+			if(!cmk_widget_get_tabbable(CMK_WIDGET(a)))
+				a = get_next_tabstop(a);
+		}
+		else
+		{
+			a = get_next_tabstop_full(event->source, rev);
+		}
+		
 		if(CMK_IS_WIDGET(a))
 			PRIVATE(CMK_WIDGET(a))->justTabbed = TRUE;
 		clutter_actor_grab_key_focus(a);

@@ -409,6 +409,28 @@ void cmk_widget_set_tabbable(CmkWidget *widget, gboolean tabbable);
 gboolean cmk_widget_get_tabbable(CmkWidget *widget);
 
 /**
+ * cmk_widget_set_tab_next:
+ * @next: The widget to tab to, or NULL for default.
+ * @prev: The widget to shift-tab (reverse) to, or NULL for default.
+ *
+ * Use this method to manually specify the next widget to receive
+ * tab focus when the tab key is pressed on this widget. The default
+ * value is to automatically find the next widget based on the
+ * actor graph.
+ */
+void cmk_widget_set_tab_next(CmkWidget *self, CmkWidget *next, CmkWidget *prev);
+
+/**
+ * cmk_widget_get_tab_next:
+ * @next: Return value for next in tab list.
+ * @prev: Return value for next in shift-tab (reverse) list.
+ *
+ * Gets the value set in cmk_widget_set_tab_next(), or NULL if using
+ * the automatic next tab widget.
+ */
+void cmk_widget_get_tab_next(CmkWidget *self, CmkWidget **next, CmkWidget **prev);
+
+/**
  * cmk_widget_get_just_tabbed:
  *
  * Only useful for widget subclasses. Returns TRUE if this widget
