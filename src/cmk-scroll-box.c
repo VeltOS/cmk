@@ -21,7 +21,7 @@ struct _CmkScrollBoxPrivate
 	gfloat prefW, prefH;
 	float allocW, allocH;
 	gboolean scrollbars;
-	CmkShadoutil *shadow;
+	CmkShadowEffect *shadow;
 	gboolean lShad, rShad, tShad, bShad;
 	gboolean lShadDraw, rShadDraw, tShadDraw, bShadDraw;
 	
@@ -44,6 +44,7 @@ static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const 
 static void on_map(ClutterActor *self_);
 static void on_unmap(ClutterActor *self_);
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
+static gboolean get_paint_volume(ClutterActor *self_, ClutterPaintVolume *volume);
 static void on_queue_relayout(ClutterActor *self_);
 static void on_paint(ClutterActor *self_);
 static gboolean on_scroll(ClutterActor *self_, ClutterScrollEvent *event);
@@ -70,6 +71,7 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 	actorClass->map = on_map;
 	actorClass->unmap = on_unmap;
 	actorClass->allocate = on_allocate;
+	actorClass->get_paint_volume = get_paint_volume;
 	//actorClass->queue_relayout = on_queue_relayout;
 	actorClass->paint = on_paint;
 	actorClass->scroll_event = on_scroll;
@@ -92,17 +94,14 @@ static void cmk_scroll_box_init(CmkScrollBox *self)
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), TRUE);
 	clutter_point_init(&(PRIVATE(self)->scroll), 0.0f, 0.0f);
 
-	private->shadow = cmk_shadoutil_new();
-	cmk_shadoutil_set_size(private->shadow, 20);
-	cmk_shadoutil_set_edges(private->shadow, 0, 0, 0, 0);
-	cmk_shadoutil_set_mode(private->shadow, CMK_SHADOW_MODE_INNER);
-	cmk_shadoutil_set_actor(private->shadow, CLUTTER_ACTOR(self));
+	private->shadow = cmk_shadow_effect_new(10);
+	cmk_shadow_effect_set_inset(private->shadow, 0, 0, 0, 0);
+	clutter_actor_add_effect(CLUTTER_ACTOR(self), CLUTTER_EFFECT(private->shadow));
 }
 
 static void cmk_scroll_box_dispose(GObject *self_)
 {
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
-	g_clear_object(&private->shadow);
 	g_clear_pointer(&private->pipe, cogl_object_unref);
 	if(private->stageFocusSignalId)
 		g_signal_handler_disconnect(private->lastStage, private->stageFocusSignalId);
@@ -206,61 +205,6 @@ static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, Clutter
 	scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
 }
 
-#define FLOAT_TO_POINTER(f) (void *)*(gsize*)&f
-#define POINTER_TO_FLOAT(p) *(gfloat *)(guint32*)&p
-
-static void fdoanimate(ClutterTimeline *timeline, gint msecs, GObject *object)
-{
-	const gchar *prop = g_object_get_data(G_OBJECT(timeline), "prop");
-	gpointer startp = g_object_get_data(G_OBJECT(timeline), "start");
-	gpointer endp = g_object_get_data(G_OBJECT(timeline), "end");
-	gfloat start = POINTER_TO_FLOAT(startp);
-	gfloat end = POINTER_TO_FLOAT(endp);
-	
-	gfloat prog = clutter_timeline_get_progress(timeline);
-	gfloat val = start + (end-start)*prog;
-
-	g_object_set(object, prop, val, NULL);
-}
-
-static void fanimate(gpointer object, const gchar *prop, guint ms, gfloat end) 
-{
-	gfloat start;
-	g_object_get(G_OBJECT(object), prop, &start, NULL);
-	if(start == end)
-		return;
-	
-	ClutterTimeline *timeline = clutter_timeline_new(ms);
-	g_object_set_data_full(G_OBJECT(timeline), "prop", g_strdup(prop), g_free);
-	g_object_set_data(G_OBJECT(timeline), "start", FLOAT_TO_POINTER(start));
-	g_object_set_data(G_OBJECT(timeline), "end", FLOAT_TO_POINTER(end));
-	g_signal_connect(timeline, "new-frame", G_CALLBACK(fdoanimate), object);
-	g_signal_connect(timeline, "completed", G_CALLBACK(g_object_unref), NULL);
-	clutter_timeline_start(timeline);
-}
-
-static void ensure_edge_shadow(CmkShadoutil *util, const gchar *edge, gboolean *shad, gboolean *shadDraw, gfloat percent)
-{
-	if(*shad)
-	{
-		if(!*shadDraw && percent > 0)
-		{
-			*shadDraw = TRUE;
-			fanimate(util, edge, 100, 1);
-		}
-		else if(*shadDraw && percent == 0)
-		{
-			*shadDraw = FALSE;
-			fanimate(util, edge, 100, 0);
-		}
-	}
-	else if(*shadDraw)
-	{
-		*shadDraw = FALSE;
-		fanimate(util, edge, 100, 0);
-	}
-}
-
 static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloat maxScrollH)
 {
 	gfloat wEndPercent = maxScrollW / private->prefW;
@@ -268,10 +212,11 @@ static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloa
 	gfloat hEndPercent = maxScrollH / private->prefH;
 	gfloat hPercent = private->scroll.y / private->prefH;
 
-	ensure_edge_shadow(private->shadow, "left", &private->lShad, &private->lShadDraw, wPercent);
-	ensure_edge_shadow(private->shadow, "right", &private->rShad, &private->rShadDraw, wEndPercent-wPercent);
-	ensure_edge_shadow(private->shadow, "top", &private->tShad, &private->tShadDraw, hPercent);
-	ensure_edge_shadow(private->shadow, "bottom", &private->bShad, &private->bShadDraw, hEndPercent-hPercent);
+	cmk_shadow_effect_inset_animate_edges(private->shadow,
+		(wPercent > 0 && private->lShad) ? 1 : 0,
+		((wEndPercent-wPercent && private->rShad) > 0) ? 1 : 0,
+		(hPercent > 0 && private->tShad) ? 1 : 0,
+		((hEndPercent-hPercent) > 0 && private->bShad) ? 1 : 0);
 }
 
 static CoglPrimitive * rect_prim(CoglContext *ctx, float x1, float y1, float x2, float y2)
@@ -289,6 +234,14 @@ static CoglPrimitive * rect_prim(CoglContext *ctx, float x1, float y1, float x2,
 	return cogl_primitive_new_p2(ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
 }
 
+static gboolean get_paint_volume(ClutterActor *self_, ClutterPaintVolume *volume)
+{
+	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
+	clutter_paint_volume_set_width(volume, private->allocW);
+	clutter_paint_volume_set_height(volume, private->allocH);
+	return TRUE;
+}
+
 static void on_paint(ClutterActor *self_)
 {
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->paint(self_);
@@ -299,10 +252,7 @@ static void on_paint(ClutterActor *self_)
 	gfloat hPercent = private->scroll.y / private->prefH;
 	gfloat wPercent = private->scroll.x / private->prefW;
 
-	ensure_shadow(private, maxScrollW, maxScrollH);
-	
 	ClutterActorBox box = {0, 0, private->allocW, private->allocH};
-	cmk_shadoutil_paint(private->shadow, &box);
 
 	if(!private->scrollbars)
 		return;
@@ -365,6 +315,8 @@ static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean ex
 	gfloat maxScrollH = MAX(private->prefH - private->allocH, 0);
 	new.x = MIN(MAX(0, new.x), maxScrollW);
 	new.y = MIN(MAX(0, new.y), maxScrollH);
+	
+	ensure_shadow(private, maxScrollW, maxScrollH);
 	
 	if(clutter_point_equals(&private->scroll, &new))
 		return;

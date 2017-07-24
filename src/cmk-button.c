@@ -6,6 +6,7 @@
 
 #include "cmk-button.h"
 #include "cmk-label.h"
+#include "cmk-shadow.h"
 #include <math.h>
 
 typedef struct _CmkButtonPrivate CmkButtonPrivate;
@@ -18,6 +19,7 @@ struct _CmkButtonPrivate
 	ClutterTimeline *downAnim;
 	ClutterTimeline *upAnim;
 	ClutterPoint clickPoint;
+	CmkShadowEffect *shadow;
 };
 
 enum
@@ -329,7 +331,6 @@ static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event
 		return CLUTTER_EVENT_STOP;
 	private->held = FALSE;
 	clutter_input_device_ungrab(event->device);
-	cmk_grab(FALSE);
 	
 	clutter_timeline_stop(private->upAnim);
 	clutter_timeline_start(private->upAnim);
@@ -339,6 +340,7 @@ static gboolean on_button_release(ClutterActor *self_, ClutterButtonEvent *event
 	
 	if(private->hover)
 		g_signal_emit(self_, signals[SIGNAL_ACTIVATE], 0);
+	cmk_grab(FALSE);
 	return CLUTTER_EVENT_STOP;
 }
 
@@ -348,6 +350,8 @@ static gboolean on_crossing(ClutterActor *self_, ClutterCrossingEvent *event)
 		(event->type == CLUTTER_ENTER && !cmk_widget_get_disabled(CMK_WIDGET(self_)));
 	if(hover != PRIVATE(CMK_BUTTON(self_))->hover)
 	{
+		if(PRIVATE(CMK_BUTTON(self_))->shadow)
+			cmk_shadow_effect_animate_radius(PRIVATE(CMK_BUTTON(self_))->shadow, hover ? 1 : 0.5);
 		PRIVATE(CMK_BUTTON(self_))->hover = hover;
 		clutter_content_invalidate(clutter_actor_get_content(self_));
 	}
@@ -361,7 +365,26 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 	if(content)
 		clutter_content_invalidate(content);
 	if((flags & CMK_STYLE_FLAG_DISABLED))
-		cmk_widget_set_tabbable(self_, !cmk_widget_get_disabled(self_));
+	{
+		CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
+		gboolean disabled = cmk_widget_get_disabled(self_);
+		if(private->type == CMK_BUTTON_TYPE_RAISED && !disabled)
+		{
+			if(!private->shadow)
+			{
+				private->shadow = cmk_shadow_effect_new(5);
+				cmk_shadow_effect_set(private->shadow, 0, 3, 0.5, 0);
+				clutter_actor_add_effect(CLUTTER_ACTOR(self_), CLUTTER_EFFECT(private->shadow));
+			}
+			//cmk_shadow_effect_animate_radius(private->shadow, 0.5);
+		}
+		else
+		{
+			clutter_actor_clear_effects(CLUTTER_ACTOR(self_));
+			private->shadow = NULL; // self->shadow owned by the actor
+		}
+		cmk_widget_set_tabbable(self_, !disabled);
+	}
 }
 
 static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
@@ -504,6 +527,18 @@ void cmk_button_set_type(CmkButton *self, CmkButtonType type)
 	if(PRIVATE(self)->type != type)
 	{
 		PRIVATE(self)->type = type;
+		gboolean disabled = cmk_widget_get_disabled(CMK_WIDGET(self));
+		if(type == CMK_BUTTON_TYPE_RAISED && !disabled)
+		{
+			PRIVATE(self)->shadow = cmk_shadow_effect_new(5);
+			cmk_shadow_effect_set(PRIVATE(self)->shadow, 0, 3, 0.5, 0);
+			clutter_actor_add_effect(CLUTTER_ACTOR(self), CLUTTER_EFFECT(PRIVATE(self)->shadow));
+		}
+		else
+		{
+			clutter_actor_clear_effects(CLUTTER_ACTOR(self));
+			PRIVATE(self)->shadow = NULL; // self->shadow owned by the actor
+		}
 		clutter_content_invalidate(clutter_actor_get_content(CLUTTER_ACTOR(self)));
 	}
 }

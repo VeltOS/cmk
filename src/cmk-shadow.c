@@ -9,207 +9,105 @@
 #define CLUTTER_ENABLE_EXPERIMENTAL_API
 
 #include "cmk-shadow.h"
+#include <cogl/cogl.h>
 #include <math.h>
 #include <string.h>
 
-struct _CmkShadow
+struct _CmkShadowEffect
 {
-	ClutterActor parent;
-	ClutterActor *shadow;
-	ClutterCanvas *canvas;
-	guint radius;
-	guint shadowMask;
+	ClutterEffect parent;
+	gboolean gettingPaintVolume;
+	
+	gboolean inset;
+	float dps;
+	float size;
+	float l, r, t, b; // If inset
+	float tL, tR, tT, tB; // For animation, if inset
+	float x, y, radius, tRadius, spread; // If not inset
+	
+	CoglContext *ctx;
+	CoglPipeline *pipe;
+	gboolean npot;
+	
+	CoglTexture *tex;
+	guchar *texData;
+	guchar *texTmp;
+	guint texW, texH;
+	gboolean invalidated;
+	
+	CoglPrimitive *prim;
+	ClutterTimeline *anim;
 };
 
-static void cmk_shadow_dispose(GObject *self_);
-static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth);
-static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight);
-static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
-static void on_shadow_size_changed(ClutterActor *shadow, GParamSpec *spec, gpointer userdata);
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkShadow *self);
+static void cmk_shadow_effect_dispose(GObject *self_);
+static void on_paint(ClutterEffect *self_, ClutterEffectPaintFlags flags);
+static gboolean get_paint_volume(ClutterEffect *self_, ClutterPaintVolume *volume);
 
-G_DEFINE_TYPE(CmkShadow, cmk_shadow, CMK_TYPE_WIDGET);
+G_DEFINE_TYPE(CmkShadowEffect, cmk_shadow_effect, CLUTTER_TYPE_EFFECT);
 
 
 
-CmkShadow * cmk_shadow_new()
+CmkShadowEffect * cmk_shadow_effect_new(float size)
 {
-	return CMK_SHADOW(g_object_new(CMK_TYPE_SHADOW, NULL));
+	CmkShadowEffect *e = CMK_SHADOW_EFFECT(g_object_new(CMK_TYPE_SHADOW_EFFECT, NULL));
+	cmk_shadow_effect_set_size(e, size);
+	return e;
 }
 
-CmkShadow * cmk_shadow_new_full(guint shadowMask, gfloat radius)
+ClutterEffect * cmk_shadow_effect_new_drop_shadow(float size, float x, float y, float radius, float spread)
 {
-	CmkShadow *self = CMK_SHADOW(g_object_new(CMK_TYPE_SHADOW, NULL));
-	cmk_shadow_set_mask(self, shadowMask);
-	cmk_shadow_set_radius(self, radius);
-	return self;
+	CmkShadowEffect *e = CMK_SHADOW_EFFECT(g_object_new(CMK_TYPE_SHADOW_EFFECT, NULL));
+	cmk_shadow_effect_set_size(e, size);
+	cmk_shadow_effect_set(e, x, y, radius, spread);
+	return CLUTTER_EFFECT(e);
 }
 
-static void cmk_shadow_class_init(CmkShadowClass *class)
+static void cmk_shadow_effect_class_init(CmkShadowEffectClass *class)
 {
-	G_OBJECT_CLASS(class)->dispose = cmk_shadow_dispose;
-	
-	CLUTTER_ACTOR_CLASS(class)->get_preferred_width = cmk_shadow_get_preferred_width;
-	CLUTTER_ACTOR_CLASS(class)->get_preferred_height = cmk_shadow_get_preferred_height;
-	CLUTTER_ACTOR_CLASS(class)->allocate = cmk_shadow_allocate;
+	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->dispose = cmk_shadow_effect_dispose;
+
+	CLUTTER_EFFECT_CLASS(class)->paint = on_paint;
+	CLUTTER_EFFECT_CLASS(class)->get_paint_volume = get_paint_volume;
 }
 
-static void cmk_shadow_init(CmkShadow *self)
+static void cmk_shadow_effect_init(CmkShadowEffect *self)
 {
-	self->shadow = clutter_actor_new();
-
-	self->canvas = CLUTTER_CANVAS(clutter_canvas_new());
-	g_signal_connect(self->canvas, "draw", G_CALLBACK(on_draw_canvas), self);
-	clutter_actor_set_content_gravity(CLUTTER_ACTOR(self), CLUTTER_CONTENT_GRAVITY_CENTER);
-	clutter_actor_set_content(self->shadow, CLUTTER_CONTENT(self->canvas));
-
-	g_signal_connect(self->shadow, "notify::size", G_CALLBACK(on_shadow_size_changed), NULL);
-	clutter_actor_add_child(CLUTTER_ACTOR(self), self->shadow);
+	self->ctx = clutter_backend_get_cogl_context(clutter_get_default_backend());
+	self->pipe = cogl_pipeline_new(self->ctx);
+	self->npot = cogl_has_feature(self->ctx, COGL_FEATURE_ID_TEXTURE_NPOT_BASIC);
 }
 
-static void cmk_shadow_dispose(GObject *self_)
+static void cmk_shadow_effect_dispose(GObject *self_)
 {
-	CmkShadow *self = CMK_SHADOW(self_);
-	G_OBJECT_CLASS(cmk_shadow_parent_class)->dispose(self_);
+	CmkShadowEffect *self = CMK_SHADOW_EFFECT(self_);
+	g_clear_pointer(&self->tex, cogl_object_unref);
+	g_clear_pointer(&self->prim, cogl_object_unref);
+	g_clear_pointer(&self->pipe, cogl_object_unref);
+	g_clear_pointer(&self->texData, g_free);
+	g_clear_pointer(&self->texTmp, g_free);
+	g_clear_object(&self->anim);
+	G_OBJECT_CLASS(cmk_shadow_effect_parent_class)->dispose(self_);
 }
 
-static void cmk_shadow_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
+static void set_invalidated(CmkShadowEffect *self)
 {
-	*minWidth = 0;
-	*natWidth = 0;
-	ClutterActor *child = cmk_shadow_get_first_child(CMK_SHADOW(self_));
-	if(child)
-		clutter_actor_get_preferred_width(child, forHeight, minWidth, natWidth);
+	self->invalidated = TRUE;
+	clutter_effect_queue_repaint(CLUTTER_EFFECT(self));
 }
 
-static void cmk_shadow_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
+// http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+static inline guint32 next_pot(guint32 v)
 {
-	*minHeight = 0;
-	*natHeight = 0;
-	ClutterActor *child = cmk_shadow_get_first_child(CMK_SHADOW(self_));
-	if(child)
-		clutter_actor_get_preferred_height(child, forWidth, minHeight, natHeight);
+	v--;
+	v |= v >> 1;
+	v |= v >> 2;
+	v |= v >> 4;
+	v |= v >> 8;
+	v |= v >> 16;
+	v++;
+	return v;
 }
-
-static void cmk_shadow_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags)
-{
-	CmkShadow *self = CMK_SHADOW(self_);
-	ClutterActor *child = clutter_actor_get_child_at_index(self_, 1);
-
-	gfloat width = box->x2 - box->x1;
-	gfloat height = box->y2 - box->y1;
-	
-	if(child)
-	{
-		ClutterActorBox childBox = {0, 0, width, height};
-		clutter_actor_allocate(child, &childBox, flags);
-	}
-
-	gboolean mTop = (self->shadowMask & CMK_SHADOW_MASK_TOP) == CMK_SHADOW_MASK_TOP;
-	gboolean mBottom = (self->shadowMask & CMK_SHADOW_MASK_BOTTOM) == CMK_SHADOW_MASK_BOTTOM;
-	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
-	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
-
-	// Set the shadow box's size depending on which sides get a shadow
-	// The base size is the CmkShadow's allocated size, but then the
-	// shadow box expands off the edges
-	ClutterActorBox shadowBox = {
-		mLeft ? (-(gfloat)self->radius) : 0,
-		mTop ? (-(gfloat)self->radius) : 0,
-		width + (mRight ? self->radius : 0),
-		height + (mBottom ? self->radius : 0)
-	};
-
-	// If the CmkShadow's box gets too small, it can mess with the shadow
-	// rendering. This makes sure the width and/or height (depending on
-	// edges being rendered) is always > self->radius*2, which is enough
-	// for the blurring code to not segfault. (The blur code also validates
-	// the width and height before attempting to render just in case, but
-	// if it errors it just doesn't render anything, which looks bad.)
-	// 
-	// Because of this expansion, a black region may start appearing off
-	// of the opposite edge of the shadow (required due to how the blurring
-	// works). To fix this in the easiest possible way, just use Clutter's
-	// clip function to hide the extra pixels created by the expansion.
-	//
-	// TODO: This still has issues when rendering shadows on opposite edges
-	// (ex TOP + BOTTOM, ALL) on very small areas. It won't segfault, but the
-	// blurring starts looking very choppy and eventually disspears completely.
-	// This might be fixed by also expanding the region in this case?
-	guint clipTop = 0, clipBottom = 0, clipLeft = 0, clipRight = 0;
-	gfloat prev;
-
-	if(mLeft != mRight // If left XOR right
-	&& (shadowBox.x2 - shadowBox.x1) <= self->radius*2)
-	{
-		if(mLeft)
-		{
-			prev = shadowBox.x2;
-			shadowBox.x2 = shadowBox.x1 + self->radius*2 + 1;
-			clipRight = shadowBox.x2 - prev;
-		}
-		else
-		{
-			prev = shadowBox.x1;
-			shadowBox.x1 = shadowBox.x2 - self->radius*2 - 1;
-			clipLeft = prev - shadowBox.x1;
-		}
-	}
-
-	if(mTop != mBottom
-	&& (shadowBox.y2 - shadowBox.y1) <= self->radius*2)
-	{
-		if(mTop)
-		{
-			prev = shadowBox.y2;
-			shadowBox.y2 = shadowBox.y1 + self->radius*2 + 1;
-			clipBottom = shadowBox.y2 - prev;
-		}
-		else
-		{
-			prev = shadowBox.y1;
-			shadowBox.y1 = shadowBox.y2 - self->radius*2 - 1;
-			clipTop = prev - shadowBox.y1;
-		}
-	}
-
-	clutter_actor_allocate(self->shadow, &shadowBox, flags);
-
-	// The clip is specified in distance from each edge, while the set_clip
-	// method takes a x,y,width,height. So convert it.
-	clutter_actor_set_clip(self->shadow, clipLeft, clipTop, (shadowBox.x2-shadowBox.x1)-clipLeft-clipRight, (shadowBox.y2-shadowBox.y1)-clipTop-clipBottom);
-	
-	CLUTTER_ACTOR_CLASS(cmk_shadow_parent_class)->allocate(self_, box, flags);
-}
-
-static void on_shadow_size_changed(ClutterActor *shadow, GParamSpec *spec, gpointer userdata)
-{
-	gfloat width, height;
-	clutter_actor_get_size(shadow, &width, &height);
-	clutter_canvas_set_size(CLUTTER_CANVAS(clutter_actor_get_content(shadow)), width, height);
-}
-
-void cmk_shadow_set_mask(CmkShadow *self, guint shadowMask)
-{
-	g_return_if_fail(CMK_IS_SHADOW(self));
-	self->shadowMask = shadowMask;
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
-}
-
-void cmk_shadow_set_radius(CmkShadow *self, guint radius)
-{
-	g_return_if_fail(CMK_IS_SHADOW(self));
-	self->radius = radius;
-	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
-}
-
-ClutterActor * cmk_shadow_get_first_child(CmkShadow *shadow)
-{
-	// The internal shadow actor takes up index 0, so the first child added
-	// by a user will be at index 1.
-	return clutter_actor_get_child_at_index(CLUTTER_ACTOR(shadow), 1);
-}
-
 
 /*
  * These blur functions are modified versions of the algorithms
@@ -227,357 +125,72 @@ ClutterActor * cmk_shadow_get_first_child(CmkShadow *shadow)
  */
 static void boxBlurH(guchar *src, guchar *dst, guint stride, guint x, guint y, guint w, guint h, guint r)
 {
-    float iarr = 1.0 / (r+r+1.0);
-    for(guint i=y; i<y+h; i++)
+	float iarr = 1.0 / (r+r+1.0);
+	for(guint i=y; i<y+h; i++)
 	{
-        guint ti = i*stride+x, li = ti, ri = ti+r;
-        guint fv = src[ti], lv = src[ti+w-1], val = (r+1)*fv;
-        for(guint j=0; j<r; j++)
+		guint ti = i*stride+x, li = ti, ri = ti+r;
+		guint fv = src[ti], lv = src[ti+w-1], val = (r+1)*fv;
+		for(guint j=0; j<r; j++)
 			val += src[ti+j];
-        for(guint j=0; j<=r; j++) {
+		for(guint j=0; j<=r; j++) {
 			val += src[ri++] - fv;
 			dst[ti++] = round(val*iarr);
 		}
-        for(guint j=r+1; j<w-r; j++) {
+		for(guint j=r+1; j<w-r; j++) {
 			val += src[ri++] - src[li++];
 			dst[ti++] = round(val*iarr);
 		}
-        for(guint j=w-r; j<w; j++) {
+		for(guint j=w-r; j<w; j++) {
 			val += lv - src[li++];
 			dst[ti++] = round(val*iarr);
 		}
-    }
+	}
 }
 
 static void boxBlurV(guchar *src, guchar *dst, guint stride, guint x, guint y, guint w, guint h, guint r)
 {
-    float iarr = 1.0 / (r+r+1.0);
-    for(guint i=x; i<x+w; i++)
+	float iarr = 1.0 / (r+r+1.0);
+	for(guint i=x; i<x+w; i++)
 	{
-        guint ti = i+y*stride, li = ti, ri = ti+r*stride;
-        guint fv = src[ti], lv = src[ti+stride*(h-1)], val = (r+1)*fv;
-        for(guint j=0; j<r; j++)
+		guint ti = i+y*stride, li = ti, ri = ti+r*stride;
+		guint fv = src[ti], lv = src[ti+stride*(h-1)], val = (r+1)*fv;
+		for(guint j=0; j<r; j++)
 			val += src[ti+j*stride];
-        for(guint j=0; j<=r; j++) {
+		for(guint j=0; j<=r; j++) {
 			val += src[ri] - fv;
 			dst[ti] = round(val*iarr);
 			ri+=stride;
 			ti+=stride;
 		}
-        for(guint j=r+1; j<h-r; j++) {
+		for(guint j=r+1; j<h-r; j++) {
 			val += src[ri] - src[li];
 			dst[ti] = round(val*iarr);
 			li+=stride;
 			ri+=stride;
 			ti+=stride;
 		}
-        for(guint j=h-r; j<h; j++) {
+		for(guint j=h-r; j<h; j++) {
 			val += lv - src[li];
 			dst[ti] = round(val*iarr);
 			li+=stride;
 			ti+=stride;
 		}
-    }
-}
-
-//static unsigned long getms()
-//{
-//	struct timeval tv;
-//	gettimeofday(&tv, NULL);
-//	return 1000000 * tv.tv_sec + tv.tv_usec;
-//}
-
-/*
- * Draws a shadow onto the canvas. In reality, this just creates a blurred
- * black box. Only the edges specified in the shadow mask are actually
- * blurred, plus some optimizations are performed (like not filling/blurring
- * the center of the canvas where the "shadow-creating" object will be
- * covering this shadow actor).
- */
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, gint width, gint height, CmkShadow *self)
-{
-	cairo_surface_t *surface = cairo_get_target(cr);
-
-	gboolean mTop = (self->shadowMask & CMK_SHADOW_MASK_TOP) == CMK_SHADOW_MASK_TOP;
-	gboolean mBottom = (self->shadowMask & CMK_SHADOW_MASK_BOTTOM) == CMK_SHADOW_MASK_BOTTOM;
-	gboolean mLeft = (self->shadowMask & CMK_SHADOW_MASK_LEFT) == CMK_SHADOW_MASK_LEFT;
-	gboolean mRight = (self->shadowMask & CMK_SHADOW_MASK_RIGHT) == CMK_SHADOW_MASK_RIGHT;
-
-	// Make sure we should actually do the shadow. Some radius/width/height
-	// combinations could cause a segfault, so be very careful
-	if(cairo_image_surface_get_format(surface) != CAIRO_FORMAT_ARGB32
-	|| (self->radius == 0)
-	|| (!mTop && !mBottom && !mLeft && !mRight)
-	|| ((mLeft || mRight) && width <= self->radius*2)
-	|| ((mTop || mBottom) && height <= self->radius*2))
-	{
-		cairo_save(cr);
-		cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-		cairo_paint(cr);
-		cairo_restore(cr);
-		return TRUE;
-	}
-
-	// Get a pixel buffer to draw the shadow into
-	guchar *buffer = cairo_image_surface_get_data(surface);
-	guint length = width*height;
-
-	// These buffers contain alpha-only versions of the shadow.
-	// There are two for a "double buffer" usage, of which 'source'
-	// will eventually be copied to buffer.
-	guchar *source = g_new(guchar, length*2);
-	guchar *osource = source;
-	guchar *dest = source + length;
-	guchar *tmp = NULL; // For buffer swaps
-
-	// This creates an entirely black canvas, except for the edges that
-	// should be blurred (on those edges, a border of size radius is created). 
-	// This is pretty much the fastest I could get it: on my device, an area
-	// of ~2000x1000 gets filled with borders in ~1ms.
-	memset(source, 255, length*2);
-	if(mTop)
-	{
-		memset(source, 0, width*self->radius);
-		memset(dest, 0, width*self->radius);
-	}
-	if(mBottom)
-	{
-		memset(source+(guint)((height-self->radius)*width), 0, width*self->radius);
-		memset(dest+(guint)((height-self->radius)*width), 0, width*self->radius);
-	}
-	if(mLeft)
-	{
-		guint yStart = mTop ? self->radius : 0;
-		guint yEnd = mBottom ? (height-self->radius) : height;
-		for(guint y=yStart; y<yEnd; ++y)
-			memset(source+(y*width), 0, self->radius);
-		for(guint y=yStart; y<yEnd; ++y)
-			memset(dest+(y*width), 0, self->radius);
-	}
-	if(mRight)
-	{
-		guint yStart = mTop ? self->radius : 0;
-		guint yEnd = mBottom ? (height-self->radius) : height;
-		for(guint y=yStart; y<yEnd; ++y)
-			memset(source+(guint)((y+1)*width-self->radius), 0, self->radius);
-		for(guint y=yStart; y<yEnd; ++y)
-			memset(dest+(guint)((y+1)*width-self->radius), 0, self->radius);
-	}
-	
-	// By only blurring the required edges, render time goes from
-	// ~30ms for ~2000x1000 area to under 4ms (on my device).
-	// However, because blurring on an edge only transfers that set of
-	// pixels, the pixels have to be transfered back to the source buffer
-	// after a blur. Luckily, we want to do two passes of the blur anyway
-	// for better looks. So just blur in sets of two on the same edge,
-	// and solve both problems at once!
-	if(mTop)
-	{
-		boxBlurV(source, dest, width, 0, 0, width, self->radius*2, self->radius/2);
-		boxBlurV(dest, source, width, 0, 0, width, self->radius*2, self->radius/2);
-	}
-	if(mBottom)
-	{
-		boxBlurV(source, dest, width, 0, height - self->radius*2 - 1, width, self->radius*2, self->radius/2);
-		boxBlurV(dest, source, width, 0, height - self->radius*2 - 1, width, self->radius*2, self->radius/2);
-	}
-	if(mLeft)
-	{
-		boxBlurH(source, dest, width, 0, 0, self->radius*2, height, self->radius/2);
-		boxBlurH(dest, source, width, 0, 0, self->radius*2, height, self->radius/2);
-	}
-	if(mRight)
-	{
-		boxBlurH(source, dest, width, width - self->radius*2 - 1, 0, self->radius*2, height, self->radius/2);
-		boxBlurH(dest, source, width, width - self->radius*2 - 1, 0, self->radius*2, height, self->radius/2);
-	}
-
-	// Copy result to cairo
-	memset(buffer, 0, length*4);
-
-	//unsigned long start = getms();
-	
-	// Just this loop alone takes more time than generating the entire
-	// shadow. Fix? Possibly instead of using the extra source and dest
-	// buffers, modify the blur functions to take channels into account
-	// and just blur between this cairo buffer and a tmp buffer.
-	for(guint i=0,j=3;i<length;++i,j+=4)
-		buffer[j]=source[i];
-
-	//unsigned long end = getms();
-	//unsigned long delta = end - start;
-	//double deltams = delta / 1000.0;
-	//printf("shadowtime: %fms (for w: %i, h: %i, r: %i)\n", deltams, width, height, self->radius);
-
-	g_free(osource);
-	return TRUE;
-}
-
-
-
-#include <cogl/cogl.h>
-
-struct _CmkShadoutil
-{
-	GObject parent;
-	
-	ClutterActor *actor;
-	CoglContext *ctx;
-	CoglPipeline *pipe;
-	gboolean npot;
-	
-	CmkShadowMode mode;
-	guint size;
-	gfloat l, r, t, b;
-	gboolean invalidated;
-	
-	CoglTexture *tex;
-	guchar *texData;
-	guchar *texTmp;
-	guint texW, texH;
-	
-	CoglPrimitive *prim;
-};
-
-enum
-{
-	PROP_TOP = 1,
-	PROP_BOTTOM,
-	PROP_LEFT,
-	PROP_RIGHT,
-	PROP_LAST
-};
-
-static GParamSpec *properties[PROP_LAST];
-
-static void cmk_shadoutil_dispose(GObject *self_);
-static void cmk_shadoutil_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec);
-static void cmk_shadoutil_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec);
-static void set_invalidated(CmkShadoutil *self);
-
-G_DEFINE_TYPE(CmkShadoutil, cmk_shadoutil, G_TYPE_OBJECT);
-
-
-
-CmkShadoutil * cmk_shadoutil_new(void)
-{
-	return CMK_SHADOUTIL(g_object_new(CMK_TYPE_SHADOUTIL, NULL));
-}
-
-static void cmk_shadoutil_class_init(CmkShadoutilClass *class)
-{
-	GObjectClass *base = G_OBJECT_CLASS(class);
-	base->dispose = cmk_shadoutil_dispose;
-	base->set_property = cmk_shadoutil_set_property;
-	base->get_property = cmk_shadoutil_get_property;
-
-	properties[PROP_TOP] = g_param_spec_float("top", "top", "top", 0, 1, 0, G_PARAM_READWRITE);
-	properties[PROP_BOTTOM] = g_param_spec_float("bottom", "bottom", "bottom", 0, 1, 0, G_PARAM_READWRITE);
-	properties[PROP_LEFT] = g_param_spec_float("left", "left", "left", 0, 1, 0, G_PARAM_READWRITE);
-	properties[PROP_RIGHT] = g_param_spec_float("right", "right", "right", 0, 1, 0, G_PARAM_READWRITE);
-
-	g_object_class_install_properties(base, PROP_LAST, properties);
-}
-
-static void cmk_shadoutil_init(CmkShadoutil *self)
-{
-	self->ctx = clutter_backend_get_cogl_context(clutter_get_default_backend());
-	self->pipe = cogl_pipeline_new(self->ctx);
-	cogl_pipeline_set_color4ub(self->pipe, 0, 0, 0, 255);
-	self->npot = cogl_has_feature(self->ctx, COGL_FEATURE_ID_TEXTURE_NPOT_BASIC);
-}
-
-static void cmk_shadoutil_dispose(GObject *self_)
-{
-	CmkShadoutil *self = CMK_SHADOUTIL(self_);
-	g_clear_pointer(&self->tex, cogl_object_unref);
-	g_clear_pointer(&self->prim, cogl_object_unref);
-	g_clear_pointer(&self->pipe, cogl_object_unref);
-	g_clear_pointer(&self->texData, g_free);
-	g_clear_pointer(&self->texTmp, g_free);
-	G_OBJECT_CLASS(cmk_shadoutil_parent_class)->dispose(self_);
-}
-
-static void cmk_shadoutil_set_property(GObject *self_, guint propertyId, const GValue *value, GParamSpec *pspec)
-{
-	CmkShadoutil *self = CMK_SHADOUTIL(self_);
-	
-	switch(propertyId)
-	{
-	case PROP_TOP:
-		self->t = g_value_get_float(value);
-		set_invalidated(self);
-		break;
-	case PROP_BOTTOM:
-		self->b = g_value_get_float(value);
-		set_invalidated(self);
-		break;
-	case PROP_LEFT:
-		self->l = g_value_get_float(value);
-		set_invalidated(self);
-		break;
-	case PROP_RIGHT:
-		self->r = g_value_get_float(value);
-		set_invalidated(self);
-		break;
-	default:
-		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
-		break;
 	}
 }
 
-static void cmk_shadoutil_get_property(GObject *self_, guint propertyId, GValue *value, GParamSpec *pspec)
+static gboolean maybe_reallocate_texture(CmkShadowEffect *self, guint width, guint height)
 {
-	CmkShadoutil *self = CMK_SHADOUTIL(self_);
-	
-	switch(propertyId)
+	// Expand size for shadow room
+	if(self->inset)
 	{
-	case PROP_TOP:
-		g_value_set_float(value, self->t);
-		break;
-	case PROP_BOTTOM:
-		g_value_set_float(value, self->b);
-		break;
-	case PROP_LEFT:
-		g_value_set_float(value, self->l);
-		break;
-	case PROP_RIGHT:
-		g_value_set_float(value, self->r);
-		break;
-	default:
-		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, propertyId, pspec);
-		break;
+		width += self->size * self->dps * 2;
+		height += self->size * self->dps * 2;
 	}
-}
-
-static void set_invalidated(CmkShadoutil *self)
-{
-	self->invalidated = TRUE;
-	if(self->actor)
-		clutter_actor_queue_redraw(self->actor);
-}
-
-// http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-static inline guint32 next_pot(guint32 v)
-{
-	v--;
-	v |= v >> 1;
-	v |= v >> 2;
-	v |= v >> 4;
-	v |= v >> 8;
-	v |= v >> 16;
-	v++;
-	return v;
-}
-
-static gboolean maybe_update_texture(CmkShadoutil *self, ClutterActorBox *box)
-{
-	guint width = (guint)(box->x2-box->x1);
-	guint height = (guint)(box->y2-box->y1);
-
-	// Expand size for shadow room (needed for both drop and inner shadows)
-	width += self->size * 2;
-	height += self->size * 2;
+	else
+	{
+		width += (self->size+self->spread) * self->dps * 2;
+		height += (self->size+self->spread) * self->dps * 2;
+	}
 	
 	// Some GPUs only support power-of-two textures
 	if(!self->npot)
@@ -593,7 +206,6 @@ static gboolean maybe_update_texture(CmkShadoutil *self, ClutterActorBox *box)
 		return FALSE;
 	
 	g_clear_pointer(&self->tex, cogl_object_unref);
-	g_clear_pointer(&self->prim, cogl_object_unref);
 	g_clear_pointer(&self->texData, g_free);
 	g_clear_pointer(&self->texTmp, g_free);
 	
@@ -606,31 +218,6 @@ static gboolean maybe_update_texture(CmkShadoutil *self, ClutterActorBox *box)
 	self->texW = width;
 	self->texH = height;
 	
-	width = (guint)(box->x2-box->x1);
-	height = (guint)(box->y2-box->y1);
-	
-	gfloat tx1 = (gfloat)self->size / self->texW;
-	gfloat ty1 = (gfloat)self->size / self->texH;
-	gfloat tx2 = 1 - tx1;
-	gfloat ty2 = 1 - ty1;
-	
-	if(!self->npot)
-	{
-		tx2 = (gfloat)(self->size + width) / self->texW;
-		ty2 = (gfloat)(self->size + height) / self->texH;
-	}
-	
-	CoglVertexP2T2C4 verts[6] = {
-		0,     0,      tx1, ty1, 0, 0, 0, 255,
-		0,     height, tx1, ty2, 0, 0, 0, 255,
-		width, 0,      tx2, ty1, 0, 0, 0, 255,
-		
-		width, 0,      tx2, ty1, 0, 0, 0, 255,
-		0,     height, tx1, ty2, 0, 0, 0, 255,
-		width, height, tx2, ty2, 0, 0, 0, 255,
-	};
-	
-	self->prim = cogl_primitive_new_p2t2c4(self->ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
 	return TRUE;
 }
 
@@ -644,53 +231,40 @@ static void fill_rect(guchar *data, guint stride, guint x, guint y, guint w, gui
 	}
 }
 
-static void maybe_draw_shadow(CmkShadoutil *self, ClutterActorBox *box)
+// Each blur should actually blur twice, both to make it look
+// better, and to make it go from data -> tmp -> data.
+#define blurH(x, y, w, h, r) { \
+	boxBlurH(data, tmp, stride, x, y, w, h, r); \
+	boxBlurH(tmp, data, stride, x, y, w, h, r); }
+#define blurV(x, y, w, h, r) { \
+	boxBlurV(data, tmp, stride, x, y, w, h, r); \
+	boxBlurV(tmp, data, stride, x, y, w, h, r); }
+
+static void draw_inner_shadow(CmkShadowEffect *self, const guint width, const guint height)
 {
-	if(!maybe_update_texture(self, box)
-	&& !self->invalidated)
-		return;
-	
-	gboolean inner = (self->mode == CMK_SHADOW_MODE_INNER);
-	const guint width = (guint)(box->x2-box->x1);
-	const guint height = (guint)(box->y2-box->y1);
-	const guint margin = self->size;
+	const guint margin = self->size*self->dps;
 	const guint stride = self->texW;
 	const guint length = self->texW * self->texH;
 	guchar *data = self->texData;
 	guchar *tmp = self->texTmp;
-	
 	memset(data, 0, length);
 	
-	// 1/2 size because of the double blur
-	const guint l = self->l * self->size/2;
-	const guint r = self->r * self->size/2;
-	const guint t = self->t * self->size/2;
-	const guint b = self->b * self->size/2;
-	
-	// Fill in rectangles on the inside if drawing a drop shadow
-	// (inner=FALSE), or on the outside if drawing inner shadow.
-	// Multiply times boolean for 0 or 'margin'.
+	// Fill the outside area of the shadow
 	if(self->l)
-		fill_rect(data, stride, margin*!inner, margin, margin, height);
+		fill_rect(data, stride, 0, margin, margin, height);
 	if(self->r)
-		fill_rect(data, stride, width + margin*inner, margin, margin, height);
+		fill_rect(data, stride, width + margin, margin, margin, height);
 	if(self->t)
-		fill_rect(data, stride, margin, margin*!inner, width, margin);
+		fill_rect(data, stride, margin, 0, width, margin);
 	if(self->b)
-		fill_rect(data, stride, margin, height + margin*inner, width, margin);
-	
-	memcpy(tmp, data, length);
-	
-	// Each blur should actually blur twice, both to make it look
-	// better, and to make it go from data -> tmp -> data.
-	#define blurH(x, y, w, h, r) { \
-		boxBlurH(data, tmp, stride, x, y, w, h, r); \
-		boxBlurH(tmp, data, stride, x, y, w, h, r); }
-	#define blurV(x, y, w, h, r) { \
-		boxBlurV(data, tmp, stride, x, y, w, h, r); \
-		boxBlurV(tmp, data, stride, x, y, w, h, r); }
-	
-	// Do the blur
+		fill_rect(data, stride, margin, height + margin, width, margin);
+
+	// Blur
+	const guint l = self->l * margin/2;
+	const guint r = self->r * margin/2;
+	const guint t = self->t * margin/2;
+	const guint b = self->b * margin/2;
+
 	if(self->l)
 		blurH(0, margin, margin*2, height, l);
 	if(self->r)
@@ -700,6 +274,7 @@ static void maybe_draw_shadow(CmkShadoutil *self, ClutterActorBox *box)
 	if(self->b)
 		blurV(margin, height, width, margin*2, b);
 	
+	// Upload texture
 	cogl_texture_set_data(self->tex,
 		COGL_PIXEL_FORMAT_A_8,
 		self->texW,
@@ -709,25 +284,185 @@ static void maybe_draw_shadow(CmkShadoutil *self, ClutterActorBox *box)
 	self->invalidated = FALSE;
 }
 
-void cmk_shadoutil_set_mode(CmkShadoutil *self, CmkShadowMode mode)
+static void draw_outer_shadow(CmkShadowEffect *self, const guint width, const guint height)
 {
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
-	if(self->mode != mode)
+	const guint margin = self->size*self->dps;
+	const guint stride = self->texW;
+	const guint length = self->texW * self->texH;
+	guchar *data = self->texData;
+	guchar *tmp = self->texTmp;
+	memset(data, 0, length);
+	
+	guint sWidth = width + self->spread*self->dps*2;
+	guint sHeight = height + self->spread*self->dps*2;
+	
+	// Fill the center of the region
+	for(guint i=0, offset=margin+stride*margin; i<sHeight; ++i)
 	{
-		self->mode = mode;
-		set_invalidated(self);
+		memset(data+offset, 255, stride-margin*2);
+		offset += stride;
 	}
+	
+	// Blur
+	const guint r = self->radius * margin/2;
+	blurH(0, 0, margin*2, sHeight+margin*2, r);
+	blurH(sWidth, 0, margin*2, sHeight+margin*2, r);
+	blurV(0, 0, sWidth+margin*2, margin*2, r);
+	blurV(0, sHeight, sWidth+margin*2, margin*2, r);
+	
+	// Upload texture
+	cogl_texture_set_data(self->tex,
+		COGL_PIXEL_FORMAT_A_8,
+		self->texW,
+		data,
+		0,
+		NULL);
+	self->invalidated = FALSE;
 }
 
-CmkShadowMode cmk_shadoutil_get_mode(CmkShadoutil *self)
+static void maybe_draw_shadow(CmkShadowEffect *self, const guint width, const guint height)
 {
-	g_return_val_if_fail(CMK_IS_SHADOUTIL(self), CMK_SHADOW_MODE_OUTER);
-	return self->mode;
+	if(!maybe_reallocate_texture(self, width, height)
+	&& !self->invalidated)
+		return;
+	
+	if(self->inset)
+		draw_inner_shadow(self, width, height);
+	else
+		draw_outer_shadow(self, width, height);
 }
 
-void cmk_shadoutil_set_size(CmkShadoutil *self, guint size)
+static void on_paint(ClutterEffect *self_, ClutterEffectPaintFlags flags)
 {
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
+	CmkShadowEffect *self = CMK_SHADOW_EFFECT(self_);
+
+	ClutterActor *actor = clutter_actor_meta_get_actor(CLUTTER_ACTOR_META(self_));
+	self->gettingPaintVolume = TRUE;
+	const ClutterPaintVolume *vol = clutter_actor_get_paint_volume(actor);
+	self->gettingPaintVolume = FALSE;
+	float width, height;
+	if(vol)
+	{
+		width = clutter_paint_volume_get_width(vol);
+		height = clutter_paint_volume_get_height(vol);
+	}
+	else
+		clutter_actor_get_size(actor, &width, &height);
+
+	self->dps = 1;
+	if(CMK_IS_WIDGET(actor))
+		self->dps = cmk_widget_get_dp_scale(CMK_WIDGET(actor));
+
+	maybe_draw_shadow(self, width, height);
+	
+	// Update primitive
+	if(self->inset)
+	{
+		gfloat tx1 = (gfloat)self->size*self->dps / self->texW;
+		gfloat ty1 = (gfloat)self->size*self->dps / self->texH;
+		gfloat tx2 = 1 - tx1;
+		gfloat ty2 = 1 - ty1;
+		
+		if(!self->npot)
+		{
+			tx2 = (gfloat)(self->size*self->dps + width) / self->texW;
+			ty2 = (gfloat)(self->size*self->dps + height) / self->texH;
+		}
+		
+		CoglVertexP2T2C4 verts[6] = {
+			0,     0,      tx1, ty1, 0, 0, 0, 255,
+			0,     height, tx1, ty2, 0, 0, 0, 255,
+			width, 0,      tx2, ty1, 0, 0, 0, 255,
+			
+			width, 0,      tx2, ty1, 0, 0, 0, 255,
+			0,     height, tx1, ty2, 0, 0, 0, 255,
+			width, height, tx2, ty2, 0, 0, 0, 255,
+		};
+		
+		g_clear_pointer(&self->prim, cogl_object_unref);
+		self->prim = cogl_primitive_new_p2t2c4(self->ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
+	}
+	else
+	{
+		gfloat tx1 = 0;
+		gfloat ty1 = 0;
+		gfloat tx2 = 1;
+		gfloat ty2 = 1;
+		
+		if(!self->npot)
+		{
+			tx2 = (gfloat)((self->size*self->dps + self->spread*self->dps)*2 + width) / self->texW;
+			ty2 = (gfloat)((self->size*self->dps + self->spread*self->dps)*2 + height) / self->texH;
+		}
+		ClutterColor c = {0,0,0,128};
+		ClutterActor *actor = clutter_actor_meta_get_actor(CLUTTER_ACTOR_META(self));
+		if(CMK_IS_WIDGET(actor))
+		{
+			const ClutterColor *n = cmk_widget_get_named_color(CMK_WIDGET(actor), "shadow");
+			if(n) cmk_copy_color(&c, n);
+		}
+		
+		c.alpha *= clutter_actor_get_paint_opacity(actor)/255.0;
+		
+		float x = self->x, y = self->y;
+		gint m = (self->size+self->spread)*self->dps;
+		CoglVertexP2T2C4 verts[6] = {
+			-m+x,       -m+y,       tx1, ty1, c.red, c.green, c.blue, c.alpha,
+			-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha,
+			width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha,
+			
+			width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha,
+			-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha,
+			width+m+x,  height+m+y, tx2, ty2, c.red, c.green, c.blue, c.alpha,
+		};
+		
+		g_clear_pointer(&self->prim, cogl_object_unref);
+		self->prim = cogl_primitive_new_p2t2c4(self->ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);
+	}
+
+	CoglFramebuffer *fb = cogl_get_draw_framebuffer();
+	
+	if(!self->inset)
+		cogl_primitive_draw(self->prim, fb, self->pipe);
+	
+	clutter_actor_continue_paint(actor);
+	
+	if(self->inset)
+		cogl_primitive_draw(self->prim, fb, self->pipe);
+}
+
+static gboolean get_paint_volume(ClutterEffect *self_, ClutterPaintVolume *volume)
+{
+	CmkShadowEffect *self = CMK_SHADOW_EFFECT(self_);
+	if(!self->gettingPaintVolume && !self->inset)
+	{
+		ClutterActor *actor = clutter_actor_meta_get_actor(CLUTTER_ACTOR_META(self));
+		
+		self->dps = 1;
+		if(CMK_IS_WIDGET(actor))
+			self->dps = cmk_widget_get_dp_scale(CMK_WIDGET(actor));
+
+		float m = (self->size*self->radius+self->spread)*self->dps;
+		ClutterVertex v = {
+			-m,
+			-m,
+			0
+		};
+		clutter_paint_volume_set_origin(volume, &v);
+		gfloat w = clutter_paint_volume_get_width(volume);
+		w += m*2;
+		gfloat h = clutter_paint_volume_get_height(volume);
+		h += m*2;
+		clutter_paint_volume_set_width(volume, w);
+		clutter_paint_volume_set_height(volume, h);
+	}
+	return TRUE;
+}
+
+
+void cmk_shadow_effect_set_size(CmkShadowEffect *self, float size)
+{
+	g_return_if_fail(CMK_IS_SHADOW_EFFECT(self));
 	if(self->size != size)
 	{
 		self->size = size;
@@ -735,52 +470,100 @@ void cmk_shadoutil_set_size(CmkShadoutil *self, guint size)
 	}
 }
 
-guint cmk_shadoutil_get_size(CmkShadoutil *self)
+void cmk_shadow_effect_set(CmkShadowEffect *self, float x, float y, float radius, float spread)
 {
-	g_return_val_if_fail(CMK_IS_SHADOUTIL(self), 0);
-	return self->size;
-}
-
-void cmk_shadoutil_set_edges(CmkShadoutil *self, gfloat l, gfloat r, gfloat t, gfloat b)
-{
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
-	if(self->l != l || self->r != r || self->t != t || self->b != b)
+	g_return_if_fail(CMK_IS_SHADOW_EFFECT(self));
+	if(self->inset || self->x != x || self->y != y || self->radius != radius || self->spread != spread)
 	{
-		self->l = l;
-		self->r = r;
-		self->t = t;
-		self->b = b;
+		g_clear_object(&self->anim);
+		self->inset = FALSE;
+		self->x = x;
+		self->y = y;
+		self->radius = radius;
+		self->spread = spread;
 		set_invalidated(self);
 	}
 }
 
-void cmk_shadoutil_get_edges(CmkShadoutil *self, gfloat *l, gfloat *r, gfloat *t, gfloat *b)
+typedef struct
 {
-	*l = 0;
-	*r = 0;
-	*t = 0;
-	*b = 0;
+	CmkShadowEffect *self;
+	float initialRadius;
+} RadiusAnimateData;
 
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
-
-	*l = self->l;
-	*r = self->r;
-	*t = self->t;
-	*b = self->b;
+static void radius_timeline_new_frame(ClutterTimeline *timeline, gint msecs, RadiusAnimateData *data)
+{
+	data->self->radius = data->initialRadius + (data->self->tRadius - data->initialRadius)*clutter_timeline_get_progress(timeline);
+	set_invalidated(data->self);
 }
 
-void cmk_shadoutil_set_actor(CmkShadoutil *self, ClutterActor *actor)
+void cmk_shadow_effect_animate_radius(CmkShadowEffect *self, float radius)
 {
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
-	self->actor = actor;
+	g_return_if_fail(CMK_IS_SHADOW_EFFECT(self));
+	g_return_if_fail(!self->inset);
+	if(self->tRadius != radius)
+	{
+		g_clear_object(&self->anim);
+		self->anim = clutter_timeline_new(100);
+		RadiusAnimateData *data = g_new(RadiusAnimateData, 1);
+		data->self = self;
+		data->initialRadius = self->radius;
+		self->tRadius = radius;
+		g_signal_connect_data(self->anim, "new-frame", G_CALLBACK(radius_timeline_new_frame), data, (GClosureNotify)g_free, 0);
+		clutter_timeline_start(self->anim);
+	}
 }
 
-void cmk_shadoutil_paint(CmkShadoutil *self, ClutterActorBox *box)
+void cmk_shadow_effect_set_inset(CmkShadowEffect *self, float l, float r, float t, float b)
 {
-	g_return_if_fail(CMK_IS_SHADOUTIL(self));
-	maybe_draw_shadow(self, box);
-	
-	CoglFramebuffer *fb = cogl_get_draw_framebuffer();
-	cogl_primitive_draw(self->prim, fb, self->pipe);
+	g_return_if_fail(CMK_IS_SHADOW_EFFECT(self));
+	if(!self->inset || self->l != l || self->r != r || self->t != t || self->b != b)
+	{
+		g_clear_object(&self->anim);
+		self->inset = TRUE;
+		self->l = self->tL = l;
+		self->r = self->tR = r;
+		self->t = self->tT = t;
+		self->b = self->tB = b;
+		set_invalidated(self);
+	}
 }
 
+typedef struct
+{
+	CmkShadowEffect *self;
+	float iL, iR, iT, iB;
+} InsetAnimateData;
+
+static void inset_timeline_new_frame(ClutterTimeline *timeline, gint msecs, InsetAnimateData *data)
+{
+	float progress = clutter_timeline_get_progress(timeline);
+	data->self->l = data->iL + (data->self->tL - data->iL)*progress;
+	data->self->r = data->iR + (data->self->tR - data->iR)*progress;
+	data->self->t = data->iT + (data->self->tT - data->iT)*progress;
+	data->self->b = data->iB + (data->self->tB - data->iB)*progress;
+	set_invalidated(data->self);
+}
+
+void cmk_shadow_effect_inset_animate_edges(CmkShadowEffect *self, float l, float r, float t, float b)
+{
+	g_return_if_fail(CMK_IS_SHADOW_EFFECT(self));
+	g_return_if_fail(self->inset);
+	if(self->tL != l || self->tR != r || self->tT != t || self->tB != b)
+	{
+		g_clear_object(&self->anim);
+		self->anim = clutter_timeline_new(100);
+		InsetAnimateData *data = g_new(InsetAnimateData, 1);
+		data->self = self;
+		data->iL = self->l;
+		data->iR = self->r;
+		data->iT = self->t;
+		data->iB = self->b;
+		self->tL = l;
+		self->tR = r;
+		self->tT = t;
+		self->tB = b;
+		g_signal_connect_data(self->anim, "new-frame", G_CALLBACK(inset_timeline_new_frame), data, (GClosureNotify)g_free, 0);
+		clutter_timeline_start(self->anim);
+	}
+}

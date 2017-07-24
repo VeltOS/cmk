@@ -5,9 +5,9 @@
  */
 
 /**
- * SECTION:cmk-shadow
- * @TITLE: CmkShadow
- * @SHORT_DESCRIPTION: Methods for rendering shadows on widgets.
+ * SECTION:cmk-shadow-effect
+ * @TITLE: CmkShadowEffect
+ * @SHORT_DESCRIPTION: ClutterEffect to render shadows on actors.
  *
  * TODO: Better documentation plz
  */
@@ -20,111 +20,86 @@
 
 G_BEGIN_DECLS
 
-#define CMK_TYPE_SHADOUTIL cmk_shadoutil_get_type()
-G_DECLARE_FINAL_TYPE(CmkShadoutil, cmk_shadoutil, CMK, SHADOUTIL, GObject);
-
-typedef enum
-{
-	CMK_SHADOW_MODE_OUTER,
-	// The default outer mode will not blur a corner unless
-	// the shadow extends on both edges of that corner. 
-	// ALL_CORNERS mode will blur all corners anyway, even if
-	// only one edge has a shadow. This creates a more realistic
-	// "corner" feel, but might be bad for a shadow on a
-	// surface on the edge of the screen.
-	CMK_SHADOW_MODE_OUTER_ALL_CORNERS,
-	CMK_SHADOW_MODE_INNER,
-} CmkShadowMode;
+#define CMK_TYPE_SHADOW_EFFECT cmk_shadow_effect_get_type()
+G_DECLARE_FINAL_TYPE(CmkShadowEffect, cmk_shadow_effect, CMK, SHADOW_EFFECT, ClutterEffect);
 
 /**
- * cmk_shadoutil_new:
+ * cmk_shadow_effect_new:
  *
- * Use one of these per actor that needs a shadow.
+ * Creates a new shadow effect with the given maximum size
+ * as given in cmk_shadow_effect_set()). By default, the
+ * shadow is an outer shadow with 0% blur.
+ *
+ * You must call cmk_shadow_effect_set() or cmk_shadow_effect_set_inset()
+ * to specify how the shadow will look.
+ *
+ * Shadows are colored with the "shadow" named color if attached
+ * to a CmkWidget.
  */
-CmkShadoutil * cmk_shadoutil_new(void);
+CmkShadowEffect * cmk_shadow_effect_new(float size);
 
 /**
- * cmk_shadoutil_set_mode:
+ * cmk_shadow_effect_new_drop_shadow:
  *
- * Set shadow mode
+ * Similar to cmk_shadow_effect_new(), but calls
+ * cmk_shadow_effect_set() for you.
  */
-void cmk_shadoutil_set_mode(CmkShadoutil *shadoutil, CmkShadowMode mode);
+ClutterEffect * cmk_shadow_effect_new_drop_shadow(float size, float x, float y, float radius, float spread);
 
 /**
- * cmk_shadoutil_get_mode:
+ * cmk_shadow_effect_set_size:
  *
- * Get shadow mode
+ * Sets the maximum radius of the shadow blur. If the actor is a
+ * CmkWidget, @r is in dps. Otherwise, it is in Clutter units.
+ *
+ * The purpose of this function is for optimization; if CmkShadowEffect
+ * knows the maximum shadow size, it has to do fewer texture allocations
+ * when the shadow is animated. cmk_shadow_effect_set() and
+ * cmk_shadow_effect_set_inset() use a certain percentage of this radius
+ * value.
  */
-CmkShadowMode cmk_shadoutil_get_mode(CmkShadoutil *shadoutil);
+void cmk_shadow_effect_set_size(CmkShadowEffect *effect, float size);
 
 /**
- * cmk_shadoutil_set_size:
+ * cmk_shadow_effect_set:
+ * @x: x offset of shadow (can be negative)
+ * @y: y offset of shadow (can be negative)
+ * @radius: Blur radius, as a percentage of maximum size (see
+ *          cmk_shadow_effect_set_size())
+ * @spread: Spread radius
  *
- * Sets the maximum shadow size. See cmk_shadoutil_set_edgues().
+ * Sets the shadow properties, which work the same as the
+ * box-shadow property in CSS. Values except @radius are in dps if
+ * the actor is a CmkWidget, otherwise Clutter units.
+ *
+ * Mutually exclusive to cmk_shadow_effect_set_inset().
  */
-void cmk_shadoutil_set_size(CmkShadoutil *shadoutil, guint size);
+void cmk_shadow_effect_set(CmkShadowEffect *effect, float x, float y, float radius, float spread);
 
 /**
- * cmk_shadoutil_get_size:
+ * cmk_shadow_effect_animate_radius:
  *
- * Gets the shadow size.
+ * Smoothly transitions the radius value of an outer shadow to a new value.
+ * Only for shadows set with cmk_shadow_effect_set().
  */
-guint cmk_shadoutil_get_size(CmkShadoutil *shadoutil);
+void cmk_shadow_effect_animate_radius(CmkShadowEffect *self, float radius);
 
 /**
- * cmk_shadoutil_set_edges:
+ * cmk_shadow_effect_set_inset:
  *
- * Sets the amount of shadow on each edge, as a percentage [0,1] of
- * the maximum. This can be used for shadow animations.
+ * Draws an inset shadow, with the left, right, top, and bottom
+ * edges having @l, @r, @t, and @b percent maximum shadow size,
+ * respectively. See cmk_shadow_effect_set_size().
+ *
+ * Mutually exclusive to cmk_shadow_effect_set().
  */
-void cmk_shadoutil_set_edges(CmkShadoutil *shadoutil, gfloat l, gfloat r, gfloat t, gfloat b);
+void cmk_shadow_effect_set_inset(CmkShadowEffect *effect, float l, float r, float t, float b);
 
 /**
- * cmk_shadoutil_get_edges:
+ * cmk_shadow_effect_inset_animate_edges:
  *
- * Get shadow edge percentages.
+ * Smoothly transitions the inner edge values of an inset shadow.
  */
-void cmk_shadoutil_get_edges(CmkShadoutil *shadoutil, gfloat *l, gfloat *r, gfloat *t, gfloat *b);
-
-/**
- * cmk_shadoutil_set_actor:
- *
- * The set actor will be automatically queued for a repaint whenever this
- * shadoutil is invalidated.
- */
-void cmk_shadoutil_set_actor(CmkShadoutil *shadoutil, ClutterActor *actor);
-
-/**
- * cmk_shadoutil_paint:
- *
- * Call this in Clutter's 'paint' actor class handler.
- * Call before chaining to parent handler to paint a drop shadow,
- * and after to paint an inner shadow.
- */
-void cmk_shadoutil_paint(CmkShadoutil *shadoutil, ClutterActorBox *box);
-
-
-#define CMK_TYPE_SHADOW cmk_shadow_get_type()
-G_DECLARE_FINAL_TYPE(CmkShadow, cmk_shadow, CMK, SHADOW, CmkWidget);
-
-enum
-{
-	CMK_SHADOW_MASK_LEFT = 1,
-	CMK_SHADOW_MASK_RIGHT = 2,
-	CMK_SHADOW_MASK_TOP = 4,
-	CMK_SHADOW_MASK_BOTTOM = 8,
-	CMK_SHADOW_MASK_ALL = CMK_SHADOW_MASK_LEFT | CMK_SHADOW_MASK_RIGHT | CMK_SHADOW_MASK_TOP | CMK_SHADOW_MASK_BOTTOM
-};
-
-CmkShadow * cmk_shadow_new();
-CmkShadow * cmk_shadow_new_full(guint shadowMask, gfloat radius);
-
-void cmk_shadow_set_mask(CmkShadow *shadow, guint shadowMask);
-void cmk_shadow_set_radius(CmkShadow *shadow, guint radius);
-
-ClutterActor * cmk_shadow_get_first_child(CmkShadow *shadow);
-
-G_END_DECLS
+void cmk_shadow_effect_inset_animate_edges(CmkShadowEffect *self, float l, float r, float t, float b);
 
 #endif
-
