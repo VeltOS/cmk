@@ -13,12 +13,12 @@ endif()
 configure_file(libcmk.pc.in libcmk.pc @ONLY)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(COGL2 REQUIRED cogl2)
 pkg_check_modules(CLUTTER REQUIRED clutter-1.0>=1.26)
 pkg_check_modules(LIBRSVG REQUIRED librsvg-2.0)
 
 add_library(cmk SHARED
 	src/cmk-button.c
+	src/cmk-dialog.c
 	src/cmk-icon.c
 	src/cmk-icon-loader.c
 	src/cmk-label.c
@@ -33,7 +33,6 @@ set_target_properties(cmk PROPERTIES SOVERSION ${CMK_VERSION} VERSION ${CMK_VERS
 target_link_libraries(cmk
 	${CLUTTER_LIBRARIES}
 	${LIBRSVG_LIBRARIES}
-	${COGL2_LIBRARIES}
 )
 target_include_directories(cmk PRIVATE
 	${CLUTTER_INCLUDE_DIRS}

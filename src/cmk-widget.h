@@ -464,11 +464,9 @@ void cmk_focus_stack_push(CmkWidget *widget);
 /**
  * cmk_focus_stack_pop:
  *
- * Undo the focus effect from cmk_focus_stack_push(). @widget must
- * be the widget at the top of the stack, to ensure the correct
- * widget is popped.
+ * Undo the focus effect from cmk_focus_stack_push().
  */
-void cmk_focus_stack_pop(CmkWidget *widget);
+void cmk_focus_stack_pop(void);
 
 /**
  * CmkGrabHandler:

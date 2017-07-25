@@ -1145,10 +1145,9 @@ void cmk_focus_stack_push(CmkWidget *widget)
 	cmk_grab(TRUE);
 }
 
-void cmk_focus_stack_pop(CmkWidget *widget)
+void cmk_focus_stack_pop(void)
 {
 	g_return_if_fail(focusStack);
-	g_return_if_fail(focusStack->data == widget);
 
 	if(focusStackTopMappedSignalId)
 		g_signal_handler_disconnect(focusStack->data, focusStackTopMappedSignalId);

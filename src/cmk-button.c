@@ -135,6 +135,10 @@ static void cmk_button_dispose(GObject *self_)
 {
 	CmkButtonPrivate *private = PRIVATE(CMK_BUTTON(self_));
 	clutter_actor_set_content(CLUTTER_ACTOR(self_), NULL);
+	if(private->downAnim)
+		clutter_timeline_stop(private->downAnim);
+	if(private->upAnim)
+		clutter_timeline_stop(private->upAnim);
 	g_clear_object(&private->downAnim);
 	g_clear_object(&private->upAnim);
 	if(private->held)
