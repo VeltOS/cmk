@@ -5,6 +5,7 @@
  */
 
 #include "cmk-util.h"
+#include <clutter/x11/clutter-x11.h>
 
 gboolean cmk_init(int *argc, char ***argv)
 {
@@ -39,13 +40,14 @@ void cmk_auto_dpi_scale(CmkWidget *root)
 	on_global_scale_changed(interface, "scaling-factor", root);
 }
 
-CmkWidget * cmk_window_new(const gchar *title, float width, float height, ClutterStage **stageptr)
+CmkWidget * cmk_window_new(const gchar *title, const gchar *class, float width, float height, ClutterStage **stageptr)
 {	
 	CmkWidget *bg = cmk_widget_new();
 	cmk_auto_dpi_scale(bg);
 	float dpScale = cmk_widget_get_dp_scale(bg);
 	
 	ClutterActor *stage = clutter_stage_new();
+	g_object_set_data(G_OBJECT(stage), "CmkWindow", bg);
 	clutter_stage_set_title(CLUTTER_STAGE(stage), title);
 	clutter_stage_set_user_resizable(CLUTTER_STAGE(stage), TRUE);
 	clutter_stage_set_no_clear_hint(CLUTTER_STAGE(stage), TRUE);
@@ -57,10 +59,30 @@ CmkWidget * cmk_window_new(const gchar *title, float width, float height, Clutte
 	cmk_focus_stack_push(bg);
 	clutter_actor_show(stage);
 	
+	// TODO: Eventually wayland support
+	Display *xdisplay = clutter_x11_get_default_display();
+	Window xwindow = clutter_x11_get_stage_window(CLUTTER_STAGE(stage));
+	if(xdisplay && xwindow)
+	{
+		XClassHint *classHint = XAllocClassHint();
+		classHint->res_class = (char *)class;
+		classHint->res_name = (char *)class;
+		XSetClassHint(xdisplay, xwindow, classHint);
+		XFree(classHint);
+	}
+	
 	// TODO: This glitches during maximize/unmaximize. How to fix?
 	clutter_actor_add_constraint(CLUTTER_ACTOR(bg), clutter_bind_constraint_new(CLUTTER_ACTOR(stage), CLUTTER_BIND_ALL, 0));
 	
 	if(stageptr)
 		*stageptr = CLUTTER_STAGE(stage);
 	return bg;
+}
+
+CmkWidget * cmk_widget_get_window(CmkWidget *widget)
+{
+	ClutterActor *stage = clutter_actor_get_stage(CLUTTER_ACTOR(widget));
+	if(!stage)
+		return NULL;
+	return CMK_WIDGET(g_object_get_data(G_OBJECT(stage), "CmkWindow"));
 }

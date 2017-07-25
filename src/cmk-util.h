@@ -35,7 +35,16 @@ void cmk_auto_dpi_scale(CmkWidget *root);
 
 /**
  * cmk_window_new:
+ * @class: Window class. Used by some window managers as the window's icon name.
  *
  * Convenience for creating a ClutterStage covered by a CmkWidget background.
  */
-CmkWidget * cmk_window_new(const gchar *title, float width, float height, ClutterStage **stageptr);
+CmkWidget * cmk_window_new(const gchar *title, const gchar *class, float width, float height, ClutterStage **stageptr);
+
+/**
+ * cmk_widget_get_window:
+ *
+ * If @widget is a child of a stage created by cmk_window_new(),
+ * gets the #CmkWidget that represents the window.
+ */
+CmkWidget * cmk_widget_get_window(CmkWidget *widget);
