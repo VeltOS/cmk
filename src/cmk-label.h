@@ -93,6 +93,21 @@ void cmk_label_animate_font_size(CmkLabel *label, float size, guint duration);
 gfloat cmk_label_get_font_size(CmkLabel *label);
 
 /**
+ * cmk_label_set_font_face:
+ * @faceName: Name of font face, or NULL for system default.
+ *
+ * Sets the font face to use, such as "Comic Sans" or "Papyrus".
+ */
+void cmk_label_set_font_face(CmkLabel *label, const gchar *faceName);
+
+/**
+ * cmk_label_get_font_face:
+ *
+ * Gets the font face, or NULL if using system default.
+ */
+const gchar * cmk_label_get_font_face(CmkLabel *label);
+
+/**
  * cmk_label_set_bold:
  *
  * Sets a font weight of %PANGO_WEIGHT_BOLD if %TRUE or

@@ -16,12 +16,14 @@ struct _CmkLabelPrivate
 	gboolean nospacing;
 	gboolean editable;
 	float size, timelineStartSize, timelineEndSize;
+	gchar *fontFace;
 };
 
 enum
 {
 	PROP_TEXT = 1,
 	PROP_SIZE,
+	PROP_FACE,
 	PROP_BOLD,
 	PROP_LAST
 };
@@ -70,9 +72,35 @@ static void cmk_label_class_init(CmkLabelClass *class)
 	
 	CMK_WIDGET_CLASS(class)->styles_changed = on_styles_changed;
 
-	properties[PROP_TEXT] = g_param_spec_string("text", "text", "text", NULL, G_PARAM_READWRITE);
-	properties[PROP_SIZE] = g_param_spec_float("size", "size", "size in dp", -1, G_MAXFLOAT, -1, G_PARAM_READWRITE);
-	properties[PROP_BOLD] = g_param_spec_boolean("bold", "bold", "bold", FALSE, G_PARAM_READWRITE);
+	properties[PROP_TEXT] =
+		g_param_spec_string("text",
+		                    "text",
+		                    "The text displayed by the label",
+		                    NULL,
+		                    G_PARAM_READWRITE);
+
+	properties[PROP_SIZE] =
+		g_param_spec_float("size",
+		                   "font size",
+		                   "Font size in dps, or -1 for system default",
+		                   -1,
+		                   G_MAXFLOAT,
+		                   -1,
+		                   G_PARAM_READWRITE);
+
+	properties[PROP_FACE] =
+		g_param_spec_string("font-face",
+		                    "font face",
+		                    "The name of the font face to use, or NULL for default",
+		                    NULL,
+		                    G_PARAM_READWRITE);
+
+	properties[PROP_BOLD] =
+		g_param_spec_boolean("bold",
+		                     "bold",
+		                     "Use bold or light font",
+		                     FALSE,
+		                     G_PARAM_READWRITE);
 
 	g_object_class_install_properties(base, PROP_LAST, properties);
 }
@@ -104,6 +132,7 @@ static void cmk_label_dispose(GObject *self_)
 {
 	CmkLabelPrivate *private = PRIVATE(CMK_LABEL(self_));
 	g_clear_object(&private->timeline);
+	g_clear_pointer(&private->fontFace, g_free);
 	if(private->settingsChangedId)
 		g_signal_handler_disconnect(clutter_get_default_backend(), private->settingsChangedId);
 	private->settingsChangedId = 0;
@@ -122,6 +151,9 @@ static void cmk_label_set_property(GObject *self_, guint propertyId, const GValu
 		break;
 	case PROP_SIZE:
 		cmk_label_set_font_size(self, g_value_get_float(value));
+		break;
+	case PROP_FACE:
+		cmk_label_set_font_face(self, g_value_get_string(value));
 		break;
 	case PROP_BOLD:
 		cmk_label_set_bold(self, g_value_get_boolean(value));
@@ -144,6 +176,9 @@ static void cmk_label_get_property(GObject *self_, guint propertyId, GValue *val
 		break;
 	case PROP_SIZE:
 		g_value_set_float(value, cmk_label_get_font_size(self));
+		break;
+	case PROP_FACE:
+		g_value_set_string(value, cmk_label_get_font_face(self));
 		break;
 	case PROP_BOLD:
 		g_value_set_boolean(value, cmk_label_get_bold(self));
@@ -251,7 +286,7 @@ static void internal_set_font_size(CmkLabel *self, float size)
 	
 	// Get the current font description instead of using private->desc,
 	// because it may have been modified by the user
-	PangoFontDescription *desc = pango_font_description_copy_static(clutter_text_get_font_description(private->text));
+	PangoFontDescription *desc = pango_font_description_copy(clutter_text_get_font_description(private->text));
 	pango_font_description_set_absolute_size(desc, abs*PANGO_SCALE);
 	clutter_text_set_font_description(private->text, desc);
 	pango_font_description_free(desc);
@@ -305,11 +340,31 @@ float cmk_label_get_font_size(CmkLabel *self)
 	return PRIVATE(self)->size;
 }
 
+void cmk_label_set_font_face(CmkLabel *self, const gchar *faceName)
+{
+	g_return_if_fail(CMK_IS_LABEL(self));
+	CmkLabelPrivate *private = PRIVATE(CMK_LABEL(self));
+	
+	g_clear_pointer(&private->fontFace, g_free);
+	private->fontFace = g_strdup(faceName);
+
+	PangoFontDescription *desc = pango_font_description_copy(clutter_text_get_font_description(private->text));
+	pango_font_description_set_family_static(desc, faceName);
+	clutter_text_set_font_description(private->text, desc);
+	pango_font_description_free(desc);
+}
+
+const gchar * cmk_label_get_font_face(CmkLabel *self)
+{
+	g_return_val_if_fail(CMK_IS_LABEL(self), NULL);
+	return PRIVATE(self)->fontFace;
+}
+
 void cmk_label_set_bold(CmkLabel *self, gboolean bold)
 {
 	g_return_if_fail(CMK_IS_LABEL(self));
 
-	PangoFontDescription *desc = pango_font_description_copy_static(clutter_text_get_font_description(PRIVATE(self)->text));
+	PangoFontDescription *desc = pango_font_description_copy(clutter_text_get_font_description(PRIVATE(self)->text));
 	pango_font_description_set_weight(desc, bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL);
 	clutter_text_set_font_description(PRIVATE(self)->text, desc);
 	pango_font_description_free(desc);
