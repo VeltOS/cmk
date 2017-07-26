@@ -65,6 +65,8 @@ void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *box, gboolean show);
  */
 void cmk_scroll_box_set_use_shadow(CmkScrollBox *box, gboolean l, gboolean r, gboolean t, gboolean b);
 
+void cmk_scroll_box_scroll_to_bottom(CmkScrollBox *box);
+
 G_END_DECLS
 
 #endif

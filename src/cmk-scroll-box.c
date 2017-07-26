@@ -391,3 +391,12 @@ void cmk_scroll_box_set_use_shadow(CmkScrollBox *self, gboolean l, gboolean r, g
 	private->tShad = t;
 	private->bShad = b;
 }
+
+void cmk_scroll_box_scroll_to_bottom(CmkScrollBox *self)
+{
+	CmkScrollBoxPrivate *private = PRIVATE(self);
+	gfloat maxScrollH = MAX(private->prefH - private->allocH, 0);
+	ClutterPoint new = private->scroll;
+	new.y = maxScrollH;
+	scroll_to(self, &new, TRUE);
+}
