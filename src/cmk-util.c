@@ -26,6 +26,8 @@ void cmk_main(void)
 static void on_global_scale_changed(GSettings *interface, const gchar *key, CmkWidget *root)
 {
 	guint scale = g_settings_get_uint(interface, key);
+	if(scale == 0)
+		scale = 1;
 	cmk_widget_set_dp_scale(root, scale);
 }
 
