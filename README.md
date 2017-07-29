@@ -11,32 +11,13 @@ regular shared library.
 Building
 ---------
 
-libcmk requires basically everything Clutter requires and CMake
+libcmk requires mostly sub-packages of these packages for building
+Clutter. See Clutter's git repo for more info on exact dependencies.
 
     - cmake (build only)
-	- autotools (build only)
-	- atk >= 2.5.3
-	- cairo-gobject >= 1.14.0
-	- cogl-1.0 >= 1.21.2
-	- cogl-pango-1.0
-	- cogl-path-1.0
-	- gdk-3.0
-	- gdk-pixbuf-2.0
-	- gio-2.0 >= 2.44.0
-	- json-glib-1.0 >= 0.12.0
-	- libinput >= 0.19.0
-	- librsvg-2.0
-	- libudev >= 136
-	- pangocairo >= 1.30
-	- pangoft2
-	- wayland-client
-	- wayland-cursor
-	- x11
-	- xcomposite >= 0.4
-	- xdamage
-	- xext
-	- xkbcommon
-	- xi
+    - gtk3
+    - cogl
+    - libinput
 
 Download/clone this repo and run
 
@@ -44,6 +25,7 @@ Download/clone this repo and run
 
     cd cmk 
     cmake .
+    git submodule update --init --depth=1
     sudo make install
 ```
 
@@ -55,10 +37,11 @@ Wayland
 --------
 
 Clutter currently has a bad Wayland backend, and does not support
-window decorations, user resizing, or correct window scaling. Untill
+window decorations, user resizing, or correct window scaling. Until
 this can be fixed, to use Cmk (or Clutter in general) for client
 applications, I recommend forcing Clutter to use the Xorg backend
-by calling clutter_set_windowing_backend("x11"); at the top of main.
+by calling clutter_set_windowing_backend("x11"); at the top of main
+or use cmk_init() which does this for you.
 
 Todo
 --------
