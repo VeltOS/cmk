@@ -5,7 +5,7 @@ includedir=${prefix}/include
 Name: libcmk
 Description: A Clutter-based Material Design widget toolkit
 Version: @CMK_VERSION@
-Requires: clutter-1.0 >= 1.26
-Requires.private: librsvg-2.0
 Libs: -L${libdir} -lcmk
-Cflags -I${includedir}
+Cflags: -I${includedir}/libcmk
+Requires: cogl-1.0 >= 1.21.2 cogl-path-1.0 cairo-gobject >= 1.14.0 gio-2.0 >= 2.44.0 atk >= 2.5.3 pangocairo >= 1.30 cogl-pango-1.0 json-glib-1.0 >= 0.12.0 gdk-3.0 wayland-cursor wayland-client xkbcommon x11 xext xdamage xcomposite >= 0.4 xi
+Requires.private: librsvg-2.0 pangoft2 gdk-pixbuf-2.0 libudev >= 136 libinput >= 0.19.0 xkbcommon

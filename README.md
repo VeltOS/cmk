@@ -3,15 +3,40 @@ libcmk
 
 A material-design widget toolkit based on Clutter.
 
+Currently libcmk builds a custom version of Clutter, but only
+for a few changes to fix backend-specific issues. It is possible
+to build libcmk without the custom Clutter and link it with a
+regular shared library.
 
 Building
 ---------
 
-libcmk requires:
+libcmk requires basically everything Clutter requires and CMake
 
     - cmake (build only)
-    - clutter
-    - librsvg
+	- autotools (build only)
+	- atk >= 2.5.3
+	- cairo-gobject >= 1.14.0
+	- cogl-1.0 >= 1.21.2
+	- cogl-pango-1.0
+	- cogl-path-1.0
+	- gdk-3.0
+	- gdk-pixbuf-2.0
+	- gio-2.0 >= 2.44.0
+	- json-glib-1.0 >= 0.12.0
+	- libinput >= 0.19.0
+	- librsvg-2.0
+	- libudev >= 136
+	- pangocairo >= 1.30
+	- pangoft2
+	- wayland-client
+	- wayland-cursor
+	- x11
+	- xcomposite >= 0.4
+	- xdamage
+	- xext
+	- xkbcommon
+	- xi
 
 Download/clone this repo and run
 
