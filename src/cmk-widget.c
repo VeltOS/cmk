@@ -716,6 +716,7 @@ void cmk_widget_set_dp_scale(CmkWidget *self, float dp)
 	if(private->dpScale != dp)
 	{
 		private->dpScale = dp;
+		update_dp_cache(self);
 		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_DP_SCALE]);
 		update_style_properties(self, CMK_STYLE_FLAG_DP);
 	}
