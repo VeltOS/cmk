@@ -24,8 +24,8 @@ Download/clone this repo and run
 ```bash
 
     cd cmk 
-    cmake .
     git submodule update --init --depth=1
+    cmake .
     sudo make install
 ```
 
