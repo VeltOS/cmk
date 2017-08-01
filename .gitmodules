@@ -1,3 +1,3 @@
 [submodule "cmk-clutter"]
 	path = cmk-clutter
-	url = https://github.com/VeltTechnologies/cmk-clutter.git
+	url = https://github.com/VeltOS/cmk-clutter.git
