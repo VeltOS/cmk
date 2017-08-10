@@ -24,6 +24,7 @@ struct _CmkScrollBoxPrivate
 	CmkShadowEffect *shadow;
 	gboolean lShad, rShad, tShad, bShad;
 	gboolean lShadDraw, rShadDraw, tShadDraw, bShadDraw;
+	gboolean scrollToBottom;
 	
 	ClutterStage *lastStage;
 	guint stageFocusSignalId;
@@ -199,10 +200,21 @@ static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, Clutter
 	};
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->allocate(self_, &new, flags | CLUTTER_DELEGATE_LAYOUT);
 
-	// Scroll to the current scroll position, which performs bounds
-	// checks on the position to make sure it's still within the valid
-	// scroll range.
-	scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
+	// See cmk_scroll_box_scroll_to_bottom
+	if(private->scrollToBottom)
+	{
+		gfloat maxScrollH = MAX(private->prefH - private->allocH, 0);
+		ClutterPoint new = private->scroll;
+		new.y = maxScrollH;
+		scroll_to(CMK_SCROLL_BOX(self_), &new, TRUE);
+	}
+	else
+	{
+		// Scroll to the current scroll position, which performs bounds
+		// checks on the position to make sure it's still within the valid
+		// scroll range.
+		scroll_to(CMK_SCROLL_BOX(self_), &private->scroll, TRUE);
+	}
 }
 
 static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloat maxScrollH)
@@ -394,9 +406,9 @@ void cmk_scroll_box_set_use_shadow(CmkScrollBox *self, gboolean l, gboolean r, g
 
 void cmk_scroll_box_scroll_to_bottom(CmkScrollBox *self)
 {
-	CmkScrollBoxPrivate *private = PRIVATE(self);
-	gfloat maxScrollH = MAX(private->prefH - private->allocH, 0);
-	ClutterPoint new = private->scroll;
-	new.y = maxScrollH;
-	scroll_to(self, &new, TRUE);
+	// Can't scroll here, because the allocation may not have been updated
+	// yet. There's not a way to update the real and requested size of the
+	// scroll box without running a relayout.
+	PRIVATE(self)->scrollToBottom = TRUE;
+	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }

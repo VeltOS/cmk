@@ -51,6 +51,7 @@ enum
 {
 	SIGNAL_CHANGED = 1,
 	SIGNAL_ACTIVATE,
+	SIGNAL_ACTIVATE_ENTER,
 	SIGNAL_LAST
 };
 
@@ -141,6 +142,13 @@ static void cmk_textfield_class_init(CmkTextfieldClass *class)
 		             G_TYPE_FROM_CLASS(class),
 		             G_SIGNAL_RUN_FIRST,
 		             G_STRUCT_OFFSET(CmkTextfieldClass, activate),
+		             NULL, NULL, NULL, G_TYPE_NONE, 0);
+	
+	signals[SIGNAL_ACTIVATE_ENTER] =
+		g_signal_new("activate-enter",
+		             G_TYPE_FROM_CLASS(class),
+		             G_SIGNAL_RUN_FIRST,
+		             G_STRUCT_OFFSET(CmkTextfieldClass, activate_enter),
 		             NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
@@ -319,6 +327,7 @@ static void on_text_changed(CmkTextfield *self, ClutterText *inputText)
 
 static void on_text_activate(CmkTextfield *self, ClutterText *inputText)
 {
+	g_signal_emit(self, signals[SIGNAL_ACTIVATE_ENTER], 0);
 	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
 
 	// Emit a fake tab so that "Enter" skips to the next form item

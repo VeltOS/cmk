@@ -39,6 +39,8 @@ struct _CmkTextfieldClass
 	void (*changed) (CmkTextfield *self);
 	
 	void (*activate) (CmkTextfield *self);
+	
+	void (*activate_enter) (CmkTextfield *self);
 };
 
 /**

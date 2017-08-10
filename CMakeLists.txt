@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.4)
 project(libcmk)
 
-set(CMK_VERSION 0.4)
+set(CMK_VERSION 0.5)
 #set(CMAKE_BUILD_TYPE DEBUG)
 
 # Assume the user wants to install Cmk to /usr unless otherwise specified
@@ -261,6 +261,20 @@ target_include_directories(cmk-clutter PRIVATE
 )
 target_compile_definitions(cmk-clutter PRIVATE
 	HAVE_CONFIG_H
+	# Set as "required" by pkg_check_modules, so we should have
+	# these. TODO: Allow specific backends instead of requiring
+	# them all. Doesn't really matter for current Cmk use cases
+	# but is probably a good idea eventually...
+	HAVE_EVDEV
+	HAVE_XEXT
+	HAVE_XCOMPOSITE
+	HAVE_XDAMAGE
+	HAVE_XINPUT_2
+	HAVE_XINPUT_2_2
+	HAVE_XKB
+	HAVE_XGE
+	HAVE_PANGO_FT2
+	#CLUTTER_ENABLE_DEBUG
 	CLUTTER_COMPILATION
 	COGL_ENABLE_EXPERIMENTAL_2_0_API
 	COGL_ENABLE_EXPERIMENTAL_API
