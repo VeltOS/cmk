@@ -303,7 +303,7 @@ void cmk_label_set_font_size(CmkLabel *self, float size)
 	// TODO: notify signal
 }
 
-static void timeline_new_frame(CmkLabel *self, guint msecs, ClutterTimeline *timeline)
+static void timeline_new_frame(CmkLabel *self, UNUSED guint msecs, ClutterTimeline *timeline)
 {
 	CmkLabelPrivate *private = PRIVATE(CMK_LABEL(self));
 	float progress = clutter_timeline_get_progress(timeline);

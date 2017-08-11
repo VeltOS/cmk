@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.4)
 project(libcmk)
 
 set(CMK_VERSION 0.5)
-#set(CMAKE_BUILD_TYPE DEBUG)
+
+if(NOT CMAKE_BUILD_TYPE)
+	set(CMAKE_BUILD_TYPE Release)
+endif()
+
+set(CMAKE_C_FLAGS_DEBUG "-g")
+set(CMAKE_C_FLAGS_RELEASE "-O3")
 
 # Assume the user wants to install Cmk to /usr unless otherwise specified
 # with the -DCMAKE_INSTALL_PREFIX=<path> flag to cmake. http://stackoverflow.com/a/16076855
@@ -287,7 +293,7 @@ set_target_properties(cmk-clutter
 	PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 	C_VISIBILITY_PRESET hidden)
-target_compile_options(cmk-clutter PRIVATE "-Wno-deprecated-declarations" "-O3")
+target_compile_options(cmk-clutter PRIVATE "-Wno-deprecated-declarations")
 add_dependencies(cmk-clutter cmk-clutter-config)
 
 add_library(cmk SHARED
@@ -303,8 +309,7 @@ add_library(cmk SHARED
 	src/cmk-util.c
 	src/cmk-widget.c
 )
-target_compile_options(cmk PRIVATE "-O3")
-set_target_properties(cmk PROPERTIES SOVERSION ${CMK_VERSION} VERSION ${CMK_VERSION})
+set_target_properties(cmk PROPERTIES SOVERSION ${CMK_VERSION} VERSION ${CMK_VERSION} COMPILE_FLAGS "-Wall -Wextra -DUNUSED=G_GNUC_UNUSED")
 target_link_libraries(cmk
 	${CLUTTERDEPS_LIBRARIES}
 	-Wl,--whole-archive

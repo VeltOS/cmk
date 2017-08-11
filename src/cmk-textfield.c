@@ -81,7 +81,7 @@ CmkTextfield * cmk_textfield_new(const gchar *name, const gchar *description)
 	return CMK_TEXTFIELD(g_object_new(CMK_TYPE_TEXTFIELD, "name", name, "description", description, NULL));
 }
 
-static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
+static gboolean on_button_press(ClutterActor *self_, UNUSED ClutterButtonEvent *event)
 {
 	ClutterText *inputClutterText = cmk_label_get_clutter_text(PRIVATE(CMK_TEXTFIELD(self_))->input);
 	clutter_actor_grab_key_focus(CLUTTER_ACTOR(inputClutterText));
@@ -269,7 +269,7 @@ static void cmk_textfield_get_property(GObject *self_, guint propertyId, GValue 
 	}
 }
 
-static void cmk_textfield_get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
+static void cmk_textfield_get_preferred_width(ClutterActor *self_, UNUSED gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
 	float natA, natB;
@@ -278,7 +278,7 @@ static void cmk_textfield_get_preferred_width(ClutterActor *self_, gfloat forHei
 	*minWidth = *natWidth = MAX(natA, natB);
 }
 
-static void cmk_textfield_get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
+static void cmk_textfield_get_preferred_height(ClutterActor *self_, UNUSED gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	CmkTextfieldPrivate *private = PRIVATE(CMK_TEXTFIELD(self_));
 	
@@ -320,12 +320,12 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 	}
 }
 
-static void on_text_changed(CmkTextfield *self, ClutterText *inputText)
+static void on_text_changed(CmkTextfield *self, UNUSED ClutterText *inputText)
 {
 	g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
 }
 
-static void on_text_activate(CmkTextfield *self, ClutterText *inputText)
+static void on_text_activate(CmkTextfield *self, UNUSED ClutterText *inputText)
 {
 	g_signal_emit(self, signals[SIGNAL_ACTIVATE_ENTER], 0);
 	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
@@ -340,9 +340,8 @@ static void on_text_activate(CmkTextfield *self, ClutterText *inputText)
 	clutter_event_free((ClutterEvent *)p);
 }
 
-static void timeline_new_frame(CmkTextfield *self, gint msecs, ClutterTimeline *timeline)
+static void timeline_new_frame(CmkTextfield *self, UNUSED gint msecs, UNUSED ClutterTimeline *timeline)
 {
-	CmkTextfieldPrivate *private = PRIVATE(self);
 	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }
 
@@ -412,7 +411,6 @@ static void cmk_textfield_allocate(ClutterActor *self_, const ClutterActorBox *b
 	ClutterActorBox childBox = {0, 0, box->x2-box->x1, box->y2-box->y1};
 	float dpScale = CMK_DP(self_, 1);
 	float transition = 0;
-	ClutterText *inputClutterText = cmk_label_get_clutter_text(private->input);
 	gboolean hasText = strlen(cmk_label_get_text(private->input)) > 0;
 	if(clutter_timeline_is_playing(private->focusTimeline))
 		transition = clutter_timeline_get_progress(private->focusTimeline);
@@ -510,8 +508,9 @@ void cmk_textfield_set_description(CmkTextfield *self, const gchar *text)
 		cmk_label_set_text(PRIVATE(self)->description, text);
 }
 
-void cmk_textfield_set_placeholder(CmkTextfield *self, const gchar *placeholder)
+void cmk_textfield_set_placeholder(UNUSED CmkTextfield *self, UNUSED const gchar *placeholder)
 {
+	// TODO
 }
 
 void cmk_textfield_set_error(CmkTextfield *self, const gchar *error)
@@ -534,8 +533,9 @@ void cmk_textfield_set_error(CmkTextfield *self, const gchar *error)
 	}
 }
 
-void cmk_textfield_set_show_clear(CmkTextfield *self, gboolean show)
+void cmk_textfield_set_show_clear(UNUSED CmkTextfield *self, UNUSED gboolean show)
 {
+	// TODO
 }
 
 void cmk_textfield_set_is_password(CmkTextfield *self, gboolean isPassword)

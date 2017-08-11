@@ -1118,7 +1118,7 @@ static void on_key_focus_out(ClutterActor *self_)
 	PRIVATE(CMK_WIDGET(self_))->justTabbed = FALSE;
 }
 
-static gboolean on_button_press(ClutterActor *self_, ClutterButtonEvent *event)
+static gboolean on_button_press(ClutterActor *self_, UNUSED ClutterButtonEvent *event)
 {
 	// The default action for a reactive actor is to just grab
 	// keyboard focus. Some widgets, like CmkTextfield, have

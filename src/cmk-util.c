@@ -42,7 +42,7 @@ void cmk_main(void)
 	clutter_main();
 }
 
-static void on_window_scale_factor_changed(gpointer settings, const gchar *key, CmkWidget *root)
+static void on_window_scale_factor_changed(gpointer settings, UNUSED const gchar *key, CmkWidget *root)
 {
 	gint factor;
 	if(CLUTTER_IS_SETTINGS(settings))

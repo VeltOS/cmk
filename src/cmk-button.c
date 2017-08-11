@@ -391,7 +391,7 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 	}
 }
 
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
+static gboolean on_draw_canvas(UNUSED ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkButton *self)
 {
 	CmkButtonPrivate *private = PRIVATE(self);
 	

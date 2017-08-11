@@ -211,13 +211,13 @@ static void cmk_icon_get_property(GObject *self_, guint propertyId, GValue *valu
 	}
 }
 
-static void get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
+static void get_preferred_width(ClutterActor *self_, UNUSED gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	gfloat scale = cmk_widget_get_dp_scale(CMK_WIDGET(self_));
 	*minWidth = *natWidth = scale * PRIVATE(CMK_ICON(self_))->size;
 }
 
-static void get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
+static void get_preferred_height(ClutterActor *self_, UNUSED gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	gfloat scale = cmk_widget_get_dp_scale(CMK_WIDGET(self_));
 	*minHeight = *natHeight = scale * PRIVATE(CMK_ICON(self_))->size;
@@ -237,7 +237,7 @@ static void on_default_icon_theme_changed(CmkIcon *self)
 		queue_update_canvas(self);
 }
 
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkIcon *self)
+static gboolean on_draw_canvas(UNUSED ClutterCanvas *canvas, cairo_t *cr, UNUSED int width, int height, CmkIcon *self)
 {
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
@@ -280,7 +280,8 @@ const gchar * cmk_icon_get_icon(CmkIcon *self)
 	return PRIVATE(self)->iconName;
 }
 
-void cmk_icon_set_pixmap(CmkIcon *self, guchar *data, cairo_format_t format, guint size, guint frames, guint fps)
+// TODO: Animated
+void cmk_icon_set_pixmap(CmkIcon *self, guchar *data, cairo_format_t format, guint size, UNUSED guint frames, UNUSED guint fps)
 {
 	CmkIconPrivate *private = PRIVATE(self);
 	

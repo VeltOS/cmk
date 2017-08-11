@@ -332,7 +332,7 @@ static void maybe_draw_shadow(CmkShadowEffect *self, const guint width, const gu
 		draw_outer_shadow(self, width, height);
 }
 
-static void on_paint(ClutterEffect *self_, ClutterEffectPaintFlags flags)
+static void on_paint(ClutterEffect *self_, UNUSED ClutterEffectPaintFlags flags)
 {
 	CmkShadowEffect *self = CMK_SHADOW_EFFECT(self_);
 
@@ -370,13 +370,13 @@ static void on_paint(ClutterEffect *self_, ClutterEffectPaintFlags flags)
 		}
 		
 		CoglVertexP2T2C4 verts[6] = {
-			0,     0,      tx1, ty1, 0, 0, 0, 255,
-			0,     height, tx1, ty2, 0, 0, 0, 255,
-			width, 0,      tx2, ty1, 0, 0, 0, 255,
+			{0,     0,      tx1, ty1, 0, 0, 0, 255},
+			{0,     height, tx1, ty2, 0, 0, 0, 255},
+			{width, 0,      tx2, ty1, 0, 0, 0, 255},
 			
-			width, 0,      tx2, ty1, 0, 0, 0, 255,
-			0,     height, tx1, ty2, 0, 0, 0, 255,
-			width, height, tx2, ty2, 0, 0, 0, 255,
+			{width, 0,      tx2, ty1, 0, 0, 0, 255},
+			{0,     height, tx1, ty2, 0, 0, 0, 255},
+			{width, height, tx2, ty2, 0, 0, 0, 255},
 		};
 		
 		g_clear_pointer(&self->prim, cogl_object_unref);
@@ -407,13 +407,13 @@ static void on_paint(ClutterEffect *self_, ClutterEffectPaintFlags flags)
 		float x = self->x, y = self->y;
 		gint m = (self->size+self->spread)*self->dps;
 		CoglVertexP2T2C4 verts[6] = {
-			-m+x,       -m+y,       tx1, ty1, c.red, c.green, c.blue, c.alpha,
-			-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha,
-			width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha,
+			{-m+x,       -m+y,       tx1, ty1, c.red, c.green, c.blue, c.alpha},
+			{-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha},
+			{width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha},
 			
-			width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha,
-			-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha,
-			width+m+x,  height+m+y, tx2, ty2, c.red, c.green, c.blue, c.alpha,
+			{width+m+x,  -m+y,       tx2, ty1, c.red, c.green, c.blue, c.alpha},
+			{-m+x,       height+m+y, tx1, ty2, c.red, c.green, c.blue, c.alpha},
+			{width+m+x,  height+m+y, tx2, ty2, c.red, c.green, c.blue, c.alpha}
 		};
 		
 		g_clear_pointer(&self->prim, cogl_object_unref);
@@ -491,7 +491,7 @@ typedef struct
 	float initialRadius;
 } RadiusAnimateData;
 
-static void radius_timeline_new_frame(ClutterTimeline *timeline, gint msecs, RadiusAnimateData *data)
+static void radius_timeline_new_frame(ClutterTimeline *timeline, UNUSED gint msecs, RadiusAnimateData *data)
 {
 	data->self->radius = data->initialRadius + (data->self->tRadius - data->initialRadius)*clutter_timeline_get_progress(timeline);
 	set_invalidated(data->self);
@@ -535,7 +535,7 @@ typedef struct
 	float iL, iR, iT, iB;
 } InsetAnimateData;
 
-static void inset_timeline_new_frame(ClutterTimeline *timeline, gint msecs, InsetAnimateData *data)
+static void inset_timeline_new_frame(ClutterTimeline *timeline, UNUSED gint msecs, InsetAnimateData *data)
 {
 	float progress = clutter_timeline_get_progress(timeline);
 	data->self->l = data->iL + (data->self->tL - data->iL)*progress;

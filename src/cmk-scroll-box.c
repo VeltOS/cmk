@@ -46,12 +46,10 @@ static void on_map(ClutterActor *self_);
 static void on_unmap(ClutterActor *self_);
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static gboolean get_paint_volume(ClutterActor *self_, ClutterPaintVolume *volume);
-static void on_queue_relayout(ClutterActor *self_);
 static void on_paint(ClutterActor *self_);
 static gboolean on_scroll(ClutterActor *self_, ClutterScrollEvent *event);
 static void scroll_to_actor(CmkScrollBox *self, ClutterActor *scrollto);
 static void scroll_to(CmkScrollBox *self, const ClutterPoint *point, gboolean exact);
-static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus);
 
 G_DEFINE_TYPE_WITH_PRIVATE(CmkScrollBox, cmk_scroll_box, CMK_TYPE_WIDGET);
 #define PRIVATE(self) ((CmkScrollBoxPrivate *)cmk_scroll_box_get_instance_private(self))
@@ -73,11 +71,8 @@ static void cmk_scroll_box_class_init(CmkScrollBoxClass *class)
 	actorClass->unmap = on_unmap;
 	actorClass->allocate = on_allocate;
 	actorClass->get_paint_volume = get_paint_volume;
-	//actorClass->queue_relayout = on_queue_relayout;
 	actorClass->paint = on_paint;
 	actorClass->scroll_event = on_scroll;
-	
-	//CMK_WIDGET_CLASS(class)->key_focus_changed = on_key_focus_changed;
 	
 	properties[PROP_SCROLL_MODE] = g_param_spec_flags("scroll-mode", "scroll mode", "scrolling mode", CLUTTER_TYPE_SCROLL_MODE, CLUTTER_SCROLL_BOTH, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 	
@@ -142,7 +137,7 @@ static void cmk_scroll_box_set_property(GObject *self_, guint propertyId, const 
 	}
 }
 
-static void on_stage_focus_changed(CmkScrollBox *self, GParamSpec *spec, ClutterStage *stage)
+static void on_stage_focus_changed(CmkScrollBox *self, UNUSED GParamSpec *spec, ClutterStage *stage)
 {
 	ClutterActor *focused = clutter_stage_get_key_focus(stage);
 	if(clutter_actor_contains(CLUTTER_ACTOR(self), focused))
@@ -234,13 +229,13 @@ static void ensure_shadow(CmkScrollBoxPrivate *private, gfloat maxScrollW, gfloa
 static CoglPrimitive * rect_prim(CoglContext *ctx, float x1, float y1, float x2, float y2)
 {
 	CoglVertexP2 verts[6] = {
-		x1,  y1,
-		x1,  y2,
-		x2,  y1,
+		{x1,  y1},
+		{x1,  y2},
+		{x2,  y1},
 		
-		x2,  y1,
-		x1,  y2,
-		x2,  y2,
+		{x2,  y1},
+		{x1,  y2},
+		{x2,  y2}
 	};
 	
 	return cogl_primitive_new_p2(ctx, COGL_VERTICES_MODE_TRIANGLES, 6, verts);	
@@ -259,12 +254,8 @@ static void on_paint(ClutterActor *self_)
 	CLUTTER_ACTOR_CLASS(cmk_scroll_box_parent_class)->paint(self_);
 	CmkScrollBoxPrivate *private = PRIVATE(CMK_SCROLL_BOX(self_));
 	
-	gfloat maxScrollW = MAX(private->prefW - private->allocW, 0);
-	gfloat maxScrollH = MAX(private->prefH - private->allocW, 0);
 	gfloat hPercent = private->scroll.y / private->prefH;
 	gfloat wPercent = private->scroll.x / private->prefW;
-
-	ClutterActorBox box = {0, 0, private->allocW, private->allocH};
 
 	if(!private->scrollbars)
 		return;
@@ -378,10 +369,6 @@ static void scroll_to_actor(CmkScrollBox *self, ClutterActor *scrollto)
 	ClutterPoint *scroll = &(PRIVATE(self)->scroll);
 	ClutterPoint p = {out.x + scroll->x, out.y + scroll->y};
 	scroll_to(self, &p, FALSE);
-}
-
-static void on_key_focus_changed(CmkWidget *self, ClutterActor *newfocus)
-{
 }
 
 void cmk_scroll_box_set_show_scrollbars(CmkScrollBox *self, gboolean show)

@@ -282,7 +282,7 @@ static void search_theme_group(IconTheme *theme, IconThemeGroup *group)
 		return;
 
 	const gchar *entry = NULL;
-	while(entry = g_dir_read_name(dir))
+	while((entry = g_dir_read_name(dir)))
 	{
 		const gchar *extStart = g_strrstr(entry, ".");
 		gsize basenameLength = extStart - entry;
@@ -404,15 +404,15 @@ static IconTheme * load_theme(const gchar *name)
 	gchar *homeIconsDir = g_strdup_printf("%s/.icons", g_get_home_dir());
 	
 	IconTheme *theme;
-	if(theme = load_theme_from(name, homeIconsDir))
+	if((theme = load_theme_from(name, homeIconsDir)))
 	{
 		g_free(homeIconsDir);
 		return theme;
 	}
 	g_free(homeIconsDir);
-	if(theme = load_theme_from(name, "/usr/share/local/icons"))
+	if((theme = load_theme_from(name, "/usr/share/local/icons")))
 		return theme;
-	if(theme = load_theme_from(name, "/usr/share/icons"))
+	if((theme = load_theme_from(name, "/usr/share/icons")))
 		return theme;
 	return NULL;
 }
@@ -512,7 +512,8 @@ gchar * cmk_icon_loader_lookup(CmkIconLoader *self, const gchar *name, guint siz
 	return cmk_icon_loader_lookup_full(self, name, FALSE, NULL, TRUE, size, cmk_icon_loader_get_scale(self));
 }
 
-gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, gboolean useFallbackNames, const gchar *themeName, gboolean useFallbackTheme, guint size, guint scale)
+// TODO fallback names
+gchar * cmk_icon_loader_lookup_full(CmkIconLoader *self, const gchar *name, UNUSED gboolean useFallbackNames, const gchar *themeName, gboolean useFallbackTheme, guint size, guint scale)
 {
 	g_return_val_if_fail(CMK_IS_ICON_LOADER(self), NULL);
 	
@@ -665,7 +666,7 @@ static cairo_surface_t * load_png(const gchar *path, guint size, gboolean cache)
 	return surface;
 }
 
-cairo_surface_t * cmk_icon_loader_load(CmkIconLoader *self, const gchar *path, guint size, guint scale, gboolean cache)
+cairo_surface_t * cmk_icon_loader_load(UNUSED CmkIconLoader *self, const gchar *path, guint size, guint scale, gboolean cache)
 {
 	if(!path)
 		return NULL;

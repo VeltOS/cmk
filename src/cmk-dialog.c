@@ -94,7 +94,7 @@ CmkDialog * cmk_dialog_new_simple(const gchar *message, const gchar *icon, ...)
 	return dialog;
 }
 
-static void on_cmk_dialog_show_complete(CmkDialog *dialog, const gchar *selection, ClutterActor *bg)
+static void on_cmk_dialog_show_complete(CmkDialog *dialog, UNUSED const gchar *selection, ClutterActor *bg)
 {
 	ClutterActor *dialog_ = CLUTTER_ACTOR(dialog);
 
@@ -114,7 +114,7 @@ static void on_cmk_dialog_show_complete(CmkDialog *dialog, const gchar *selectio
 	clutter_actor_set_reactive(bg, FALSE);
 }
 
-static void on_cmk_dialog_show_destroy(ClutterActor *bg)
+static void on_cmk_dialog_show_destroy(UNUSED ClutterActor *bg)
 {
 	cmk_focus_stack_pop();
 }
@@ -444,14 +444,14 @@ static void on_styles_changed(CmkWidget *self_, guint flags)
 	}
 }
 
-static void on_size_changed(ClutterActor *self, GParamSpec *spec, ClutterCanvas *canvas)
+static void on_size_changed(ClutterActor *self, UNUSED GParamSpec *spec, ClutterCanvas *canvas)
 {
 	gfloat width, height;
 	clutter_actor_get_size(self, &width, &height);
 	clutter_canvas_set_size(CLUTTER_CANVAS(canvas), width, height);
 }
 
-static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkDialog *self)
+static gboolean on_draw_canvas(UNUSED ClutterCanvas *canvas, cairo_t *cr, int width, int height, CmkDialog *self)
 {
 	double radius = BEVEL_RADIUS*cmk_widget_get_bevel_radius_multiplier(CMK_WIDGET(self));
 	double degrees = M_PI / 180.0;
@@ -473,7 +473,7 @@ static gboolean on_draw_canvas(ClutterCanvas *canvas, cairo_t *cr, int width, in
 	return TRUE;
 }
 
-static gboolean on_dialog_captured_event(ClutterActor *actor, ClutterEvent *event, CmkDialog *self)
+static gboolean on_dialog_captured_event(UNUSED ClutterActor *actor, ClutterEvent *event, CmkDialog *self)
 {
 	if(!PRIVATE(self)->allowEsc)
 		return FALSE;

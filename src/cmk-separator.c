@@ -46,7 +46,7 @@ static void cmk_separator_init(CmkSeparator *self)
 	clutter_actor_set_background_color(CLUTTER_ACTOR(self), &c);
 }
 
-static void get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
+static void get_preferred_width(ClutterActor *self_, UNUSED gfloat forHeight, gfloat *minWidth, gfloat *natWidth)
 {
 	if(CMK_SEPARATOR(self_)->orientation == CLUTTER_ORIENTATION_HORIZONTAL)
 		*minWidth = *natWidth = 0;
@@ -54,7 +54,7 @@ static void get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *m
 		*minWidth = *natWidth = CMK_DP(self_, 1);
 }
 
-static void get_preferred_height(ClutterActor *self_, gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
+static void get_preferred_height(ClutterActor *self_, UNUSED gfloat forWidth, gfloat *minHeight, gfloat *natHeight)
 {
 	if(CMK_SEPARATOR(self_)->orientation == CLUTTER_ORIENTATION_VERTICAL)
 		*minHeight = *natHeight = 0;
