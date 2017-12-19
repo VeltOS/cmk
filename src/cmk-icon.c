@@ -10,8 +10,7 @@
 #include <string.h>
 
 typedef struct _CmkIconPrivate CmkIconPrivate;
-struct _CmkIconPrivate
-{
+struct _CmkIconPrivate {
 	gchar *iconName;
 	gchar *themeName;
 	gboolean useForegroundColor;
@@ -142,7 +141,16 @@ static void cmk_icon_class_init(CmkIconClass *class)
 static void cmk_icon_init(CmkIcon *self)
 {
 	ClutterContent *canvas = clutter_canvas_new();
-	clutter_canvas_set_scale_factor(CLUTTER_CANVAS(canvas), 1); // Manual scaling
+
+	// Commit 20fcb8863293 of Mutter removed scale-factor from their
+	// internal version of Clutter, as it was unnecessary. So when
+	// clutter_canvas_set_scale_factor is called from Graphene, it
+	// spews critical errors to stdout because there's no scale-factor
+	// property. clutter_canvas_set_scale_factor isn't a function in
+	// mutter-clutter either, but it links to cmk-clutter's version.
+	if(g_object_class_find_property(G_OBJECT_GET_CLASS(G_OBJECT(self)), "scale-factor") != NULL)
+		clutter_canvas_set_scale_factor(CLUTTER_CANVAS(canvas), 1); // Manual scaling
+
 	g_signal_connect(canvas, "draw", G_CALLBACK(on_draw_canvas), self);
 	clutter_actor_set_content_gravity(CLUTTER_ACTOR(self), CLUTTER_CONTENT_GRAVITY_CENTER);
 	clutter_actor_set_content(CLUTTER_ACTOR(self), canvas);
