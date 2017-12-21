@@ -1,54 +1,62 @@
-libcmk
-=========
+Cmk
+------
 
-A material-design widget toolkit based on Clutter.
+Cmk is a Widget Toolit, and ONLY a Widget Toolkit. It is not have a display
+backend, and it has no concept of a window or a stage. It only has minimal
+layout capabilities. It is designed for use inside a display backend, such
+as GTK+, Clutter, Cocoa, or whatever Windows uses.
 
-Currently libcmk builds a custom version of Clutter, but only
-for a few changes to fix backend-specific issues. It is possible
-to build libcmk without the custom Clutter and link it with a
-regular shared library.
+Why is this useful? If, for example, you want to create a multi-platform app
+written in the default toolkit of each platform so it doesn't look out-of-
+place, but you also have a custom-rendered part of the app which displays
+some kind of (potentially user-interactive) data. Normally, you might have
+to write the event handling and rendering for that widget for each platform.
+With Cmk, you can write it once as a CmkWidget subclass, and embed it in any
+toolkit.
+
+Cmk was created for the [Graphene Linux Desktop Environment](https://github.com/VeltOs/graphene-desktop),
+so that the custom-rendered Material Design Widgets (initially written in
+Clutter for use with Mutter) could also be used in desktop applications
+shipped with Graphene (written in GTK+ because Clutter has very bad desktop
+app support). Hence, Cmk comes with a default set of Material Design-style
+widgets.
+
+TODO
+-----
+
+	- Support macOS Cocoa
 
 Building
----------
+-----
 
-libcmk requires mostly sub-packages of these packages for building
-Clutter. See Clutter's git repo for more info on exact dependencies.
+Depends on:
 
-    - cmake (build only)
-    - gtk3
-    - cogl
-    - libinput
+	- cmake (build only)
+	- glib2
+	- gtk3 (optional; for building with GTK+ support)
+	- clutter-1.0 (optional; for building with Clutter support)
 
-Download/clone this repo and run
+To build, first edit the first few lines of the CMakeLists.txt file to
+specify whether or not to build with GTK+ and/or Clutter support. Then:
 
 ```bash
 
-    cd cmk 
-    git submodule update --init --depth=1
-    cmake .
-    sudo make install
+    cd path/to/libcmk
+    mkdir build && cd build
+    cmake .. && make
+    sudo make install # Optionally install
 ```
 
-GtkDoc documentation is available if you have the gtk-doc package
-installed and you run 'make documentation'. Open the cmkdoc/html/index.html
-file in a browser.
+License
+-----
 
-Wayland
---------
-
-Clutter currently has a bad Wayland backend, and does not support
-window decorations, user resizing, or correct window scaling. Until
-this can be fixed, to use Cmk (or Clutter in general) for client
-applications, I recommend forcing Clutter to use the Xorg backend
-by calling clutter_set_windowing_backend("x11"); at the top of main
-or use cmk_init() which does this for you.
-
-Todo
---------
-
-Basically everything
+Cmk is under the Apache License 2.0. This means you can freely compile and
+and use it in binary form (including static linkage) without restriction, but
+forks must retain attribution to the original authors. For full details,
+visit https://www.apache.org/licenses/LICENSE-2.0 .
 
 Authors
---------
+-----
 
 Aidan Shafran <zelbrium@gmail.com>
+

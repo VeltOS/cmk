@@ -7,527 +7,160 @@
 #ifndef __CMK_WIDGET_H__
 #define __CMK_WIDGET_H__
 
-#include <clutter/clutter.h>
+#include <glib-object.h>
+#include <cairo/cairo.h>
+#include "cmk-event.h"
 
 G_BEGIN_DECLS
-
-#define CMK_TYPE_WIDGET cmk_widget_get_type()
-G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, ClutterActor);
 
 /**
  * SECTION:cmk-widget
  * @TITLE: CmkWidget
  * @SHORT_DESCRIPTION: The base Widget class of Cmk
- *
- * CmkWidget is the base widget class of Cmk. When created on its own, it
- * is little more than a #ClutterActor with a few fancy extra properties
- * like named colors.
- *
- * The useful part is subclassing CmkWidget, as the subclass can inherit
- * style properties such as padding, density-independent pixels scale (dps),
- * and named colors, which can be used for drawing.
- *
- * Style properties are inherited down the actor graph, and child widgets
- * automatically receive notifications through the styles_changed class method
- * when properties in their parents have changed. Some style properties
- * completely override inherited values when set (such as padding) but others
- * combine with their parents' values (such as dp). See the getters and
- * setters for each property for more details.
- *
- * Style properties are inherited automatically from the widget's parent if
- * the widget's direct parent is a CmkWidget. However, if it is not, you must
- * manually specify a widget to inherit properties from using
- * cmk_widget_set_style_parent(). Therefore, using #CmkWidgets in place of
- * #ClutterActors for simple container actors with no logic is still useful.
- *
- * CmkWidgets also have the feature of 'replacement', using the
- * #CmkWidget::replace and #CmkWidget::back signals. If the widget's parent
- * supports it, a widget subclass or controller can emit one of these signals
- * on itself/the widget to have the widget's parent hide the widget and
- * replace it with a new one. This is similar to the idea of Fragments and
- * a Fragment stack in Android, and is great for sequences of dialogs showed
- * to the user, or for widgets with subdialogs.
- *
- * Widgets use named colors for their drawing. The colors that Cmk may use
- * (depending on the widgets) are: "background", "foreground", "primary",
- * "accent", "error", "hover", and "selected". You should at least set all of
- * these colors at the start of your program.
- *
- * CmkWidget subclasses must chain up to the ClutterActorClass.key_press_event()
- * method if they override it before their key input handling logic (if any)
- * to ensure proper tabbing support. Subclasses must chain up to the
- * ClutterActorClass.button_press_event() method if they override it OR provide
- * their own keyboard-focus-on-click handling.
  */
 
-/**
- * CMK_DP:
- * @dps: A measurement in dps
- *
- * Converts dps to pixels. This should be used when drawing raw pixels to
- * a canvas or when allocating child widgets.
- */
-#define CMK_DP(widget, dps) (cmk_widget_get_dp_scale((CmkWidget *)(widget))*(dps))
-
-/**
- * CmkStyleFlag:
- *
- * Flags for all #CmkWidget style properties.
- */
-enum
-{
-	CMK_STYLE_FLAG_COLORS = 1<<0,
-	CMK_STYLE_FLAG_PADDING_MUL = 1<<1,
-	CMK_STYLE_FLAG_BEVEL_MUL = 1<<2,
-	CMK_STYLE_FLAG_DP = 1<<3,
-	CMK_STYLE_FLAG_DISABLED = 1<<4,
-	CMK_STYLE_FLAG_ALL = (1<<5)-1,
-} CmkStyleFlag;
-
-typedef struct _CmkWidgetClass CmkWidgetClass;
+#define CMK_TYPE_WIDGET cmk_widget_get_type()
+G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, GInitiallyUnowned);
 
 /**
  * CmkWidgetClass:
- * @styles_changed: Class handler for the #CmkWidget::styles-changed signal.
- *        Override this method to receive style update notifications. Chain
- *        up to the parent class immediately, BEFORE updating your widget.
- * @key_focus_changed: Class handler for the #CmkWidget::key-focus-changed
- *        signal. Chain up to the parent class if the event goes unhandled.
- * @replace: Class handler for #CmkWidget::replace signal. You probably don't
- *        need to override this.
- * @back: Class handler for #CmkWidget::back signal. You probably don't
- *        need to override this.
+ * @invalidate: Class handler for the #CmkWidget::invalidate signal.
+ * @relayout: Class handler for the #CmkWidget::relayout signal.
+ *            Subclasses must chain up.
+ * @draw: Draw handler. Chain up to this before doing your own
+ *        drawing to get standard widget effects.
+ * @event: User input event handler. Return TRUE if the widget
+ *         captured and responded to the event, FALSE to propagate
+ *         the event.
+ * @get_preferred_width: Preferred width handler.
+ * @get_preferred_height: Preferred height handler.
+ * @disable: Disabled event handler.
  */
 struct _CmkWidgetClass
 {
 	/*< private >*/
-	ClutterActorClass parentClass;
+	GObjectClass parentClass;
 	
 	/*< public >*/
-	void (*styles_changed) (CmkWidget *self, guint flags);
-	
-	void (*replace) (CmkWidget *self, CmkWidget *replacement);
-	
-	void (*back) (CmkWidget *self);
+	void (*invalidate) (CmkWidget *self, const cairo_region_t *region);
+	void (*relayout) (CmkWidget *self);
+	void (*draw) (CmkWidget *self, cairo_t *cr);
+	gboolean (*event) (CmkWidget *self, const CmkEvent *event);
+	void (*get_preferred_width) (CmkWidget *self, float forHeight, float *min, float *nat);
+	void (*get_preferred_height) (CmkWidget *self, float forWidth, float *min, float *nat);
+	void (*disable) (CmkWidget *self, gboolean disabled);
 };
-
-typedef struct _CmkNamedColor CmkNamedColor;
-
-/**
- * _CmkNamedColor:
- * @name: Name of color
- * @color: Color
- *
- * A named color for use with cmk_widget_set_named_colors().
- */
-struct _CmkNamedColor
-{
-	const gchar *name;
-	ClutterColor color;
-};
+typedef struct _CmkWidgetClass CmkWidgetClass;
 
 /**
  * cmk_widget_new:
  *
- * #CmkWidget is not abstract. Creating a widget on its own is effectively
- * just a #ClutterActor with styling properties.
+ * Creates a blank widget.
  */
-CmkWidget * cmk_widget_new();
+CmkWidget * cmk_widget_new(void);
 
 /**
- * cmk_widget_destroy:
+ * cmk_widget_set_wrapper:
  *
- * Exactly the same as clutter_actor_destroy(), except returns #G_SOURCE_REMOVE
- * so this can easily be called from timeouts. Safe to pass in a regular
- * #ClutterActor* casted to a #CmkWidget*.
+ * Sets the toolkit-specific wrapper object.
+ * This may only be called once on a widget.
  */
-gboolean cmk_widget_destroy(CmkWidget *widget);
+void cmk_widget_set_wrapper(CmkWidget *widget, void *wrapper);
 
 /**
- * CmkWidget::tabbable:
+ * cmk_widget_get_wrapper:
  *
- * Whether or not this widget can receive keyboard focus through
- * tabbing.
+ * Gets the toolkit-specific wrapper object
+ * set by cmk_widget_set_wrapper().
  */
+void * cmk_widget_get_wrapper(CmkWidget *widget);
 
 /**
- * cmk_widget_set_style_parent:
+ * cmk_widget_invalidate:
  *
- * Instead of using the widget's actual parent, use a different widget to
- * inherit styles from. Set to %NULL to return to using the actual parent.
- *
- * If the parent is destroyed, the "style parent" association will
- * automatically be removed and the widget will return to using its real
- * parent or no parent.
+ * Invalidates (requests a redraw) for a rectangle of the widget.
+ * For use by CmkWidget subclasses. Controlling code should listen
+ * to the #CmkWidget::invalidate signal. Set region to NULL to
+ * redraw the entire widget.
  */
-void cmk_widget_set_style_parent(CmkWidget *widget, CmkWidget *parent);
+void cmk_widget_invalidate(CmkWidget *self, const cairo_region_t *region);
 
 /**
- * cmk_widget_get_style_parent:
+ * cmk_widget_relayout:
  *
- * Gets the current style parent. If cmk_widget_set_style_parent() has been
- * called, this returns that value. Otherwise, this returns the widget's
- * current actual parent if it is a #CmkWidget or %NULL otherwise.
+ * Indicates that the size request of the widget has changed,
+ * and that a layout should be performed. For use by CmkWidget
+ * subclasses. Controlling code should listen to the
+ * #CmkWidget::relayout signal.
  */
-CmkWidget * cmk_widget_get_style_parent(CmkWidget *widget);
+void cmk_widget_relayout(CmkWidget *self);
 
 /**
- * cmk_widget_set_named_color:
- * @name: The name of the color
- * @color: The color, or NULL to unset.
+ * cmk_widget_draw:
  *
- * Sets a named color that can be used to draw the widget. This color will be
- * inherited by child #CmkWidgets.
+ * Draws the widget at the current origin of the cairo context.
  */
-void cmk_widget_set_named_color(CmkWidget *widget, const gchar *name, const ClutterColor *color);
+void cmk_widget_draw(CmkWidget *widget, cairo_t *cr);
 
 /**
- * cmk_widget_set_named_color_link:
- * @name: The name of the color
- * @linkto: The color @name should link to, or NULL to unset.
+ * cmk_widget_event:
  *
- * Sets a named color using the value of another named color. This is useful
- * to, for example, tell a widget to use the "primary" color whenever it
- * wants to draw "background". This is mutually exclusive with
- * cmk_widget_set_named_color() (calling one will overwrite the value set
- * by the other on a single widget).
- *
- * Color links are inherited just like regular named colors. A color can
- * be linked to a linked color, forming a chain. A link cycle may result
- * in a crash, so be careful.
+ * Emits an event on this widget. Coordinates should be relative
+ * to this widget's origin.
  */
-void cmk_widget_set_named_color_link(CmkWidget *self, const gchar *name, const gchar *linkto);
+gboolean cmk_widget_event(CmkWidget *widget, const CmkEvent *event);
 
 /**
- * cmk_widget_set_named_colors:
+ * cmk_widget_get_preferred_width:
  *
- * Takes an array of #CmkNamedColor (last one must be a NULLed
- * struct) and calls cmk_widget_set_named_color() on each.
+ * Gets the preferred minimum and natural width.
+ * Safe to pass NULL for min and nat, if those values
+ * are not desired.
  */
-void cmk_widget_set_named_colors(CmkWidget *widget, const CmkNamedColor *colors);
+void cmk_widget_get_preferred_width(CmkWidget *widget, float forHeight, float *min, float *nat);
 
 /**
- * cmk_widget_get_named_color:
- * @name: Name of color to get
+ * cmk_widget_get_preferred_height:
  *
- * Gets a named color set with cmk_widget_set_named_color(). If it is not
- * found, an inherited value is returned. If there is no inherited value,
- * %NULL is returned.
- *
- * See also cmk_widget_get_default_named_color(), which is probably what
- * you want instead of this function.
+ * Gets the preferred minimum and natural height.
+ * Safe to pass NULL for min and nat, if those values
+ * are not desired.
  */
-const ClutterColor * cmk_widget_get_named_color(CmkWidget *widget, const gchar *name);
+void cmk_widget_get_preferred_height(CmkWidget *widget, float forWidth, float *min, float *nat);
 
 /**
- * cmk_widget_get_default_named_color:
- * @name: Name of color to get
+ * cmk_widget_set_size:
  *
- * Same as cmk_widget_get_named_color, except always returns a valid color
- * even if the color has never been defined. If these colors aren't defined,
- * then currently "background" returns solid white, "foreground" returns
- * solid black, and all other colors return gray.
+ * Sets the actual size, in cairo units, of the widget.
+ * This lets the widget know how large it can draw its view.
  *
- * This method is preferred to cmk_widget_get_named_color() when drawing
- * colors for a widget, as it will make the widget always at least usable
- * (but probably not good-looking).
+ * Set width and/or height to less-than-zero to unset the value.
+ *
+ * The widget may render outside its size, especially if the
+ * size is less than the minimum requested width or height. No
+ * automatic clipping is performed.
  */
-const ClutterColor * cmk_widget_get_default_named_color(CmkWidget *widget, const gchar *name);
+void cmk_widget_set_size(CmkWidget *widget, float width, float height);
 
 /**
- * cmk_widget_set_draw_background_color:
+ * cmk_widget_get_size:
  *
- * If %TRUE, #CmkWidget will use clutter_actor_set_background_color()
- * with the color specified by the "background" named color (and update
- * automatically as "background" changes).
- * Changing this value to %FALSE will set the background color to NULL,
- * making a transparent background.
- * Defaults to %FALSE.
+ * Gets the size of the widget. If the width and/or height have been
+ * set with cmk_widget_set_size(), those values are returned. Otherwise,
+ * the preferred natural width and height are returned.
  */
-void cmk_widget_set_draw_background_color(CmkWidget *widget, gboolean draw);
+void cmk_widget_get_size(CmkWidget *widget, float *width, float *height);
 
 /**
- * cmk_widget_set_dp_scale:
- * @dp: Pixels per 1 dp.
- *
- * Sets the number of pixels per 1 dp. Defaults to 1. Note that this
- * value is then scaled by parents in the actor graph (hence the "scale")
- * 
- * dps are "density-independent pixels", similar to ems in HTML.
- * Most Cmk functions that take measurements use dps.
- */
-void cmk_widget_set_dp_scale(CmkWidget *widget, float dp);
-
-/**
- * cmk_widget_get_dp_scale:
- *
- * Gets the number of pixels per 1 dp. This value is scaled by the widget
- * graph; therefore, calling cmk_widget_set_dp_scale(2) on the root
- * widget will scale all widgets below it by 2.
- *
- * When drawing a widget, remember to use dps instead of pixel values.
- * This can be done easily using the CMK_DP macro. Values in ClutterActorBox,
- * passed to widgets' allocation functions, must be in pixels.
- */
-float cmk_widget_get_dp_scale(CmkWidget *widget);
-
-/**
- * cmk_widget_set_bevel_radius_multiplier:
- *
- * Sets the bevel radius multiplier, which the widget's draw method may
- * use if it draws bevels. Defaults to 1. Set to - 1 for "inherit".
- * Automatically queues a redraw.
- */
-void cmk_widget_set_bevel_radius_multiplier(CmkWidget *widget, float multiplier);
-
-/**
- * cmk_widget_get_bevel_radius_multiplier:
- *
- * Gets the bevel radius multiplier, or inherits from the parent if -1.
- * If there is no parent to inherit from, returns 1.
- */
-float cmk_widget_get_bevel_radius_multiplier(CmkWidget *widget);
-
-/**
- * cmk_widget_set_padding_multiplier:
- *
- * Sets the padding multiplier, which the widget may use if it needs to
- * add padding. Defaults to 1. Set to -1 for inherit. Automatically queues
- * a relayout.
- */
-void cmk_widget_set_padding_multiplier(CmkWidget *widget, float multiplier);
-
-/**
- * cmk_widget_get_padding_multiplier:
- *
- * Gets the padding multiplier, or inherits from the parent if -1.
- * If there is no parent to inherit from, returns 1.
- */
-float cmk_widget_get_padding_multiplier(CmkWidget *widget);
-
-/**
- * cmk_widget_set_margin:
- *
- * Similar to calling clutter_actor_set_margin(), but these margin
- * values are in dps, so the margin will scale with the widget's dp.
- */
-void cmk_widget_set_margin(CmkWidget *widget, float left, float right, float top, float bottom);
-
-/*
  * cmk_widget_set_disabled:
- * @disabled: 1 (%TRUE) for disabled, 0 (%FALSE) for enabled, -1 to inherit
- *            from the style parent
  *
- * Sets or unsets the disabled status on the widget (and, by style
- * inheritance, its child widgets). Widget implementations should
- * listen for the CMK_STYLE_FLAG_DISABLED flag in their
- * CmkWidgetClass.styles_changed() implementation and update their
- * widgets accordingly.
+ * Sets or unsets the disabled flag, and invalidates the widget.
  */
-void cmk_widget_set_disabled(CmkWidget *widget, int disabled);
+void cmk_widget_set_disabled(CmkWidget *widget, gboolean disabled);
 
-/*
+/**
  * cmk_widget_get_disabled:
- *
- * Gets the disabled status of the widget. Returns TRUE if this
- * widget or a widget in its style parent heirarchy is disabled.
  */
 gboolean cmk_widget_get_disabled(CmkWidget *widget);
-
-/**
- * cmk_widget_replace:
- * @widget: The widget to be replaced
- * @replacement: The new widget
- *
- * Emits a signal requesting widget's parent to replace this widget with
- * a new widget. Similar to the idea of Fragments in Android. See
- * cmk_widget_back().
- *
- * Convenience for
- * g_signal_emit_by_name(widget, "replace", replacement);
- */
-void cmk_widget_replace(CmkWidget *widget, CmkWidget *replacement);
-
-/**
- * cmk_widget_back:
- *
- * Emits a signal requesting widget's parent to replace this widget with the
- * previously shown widget. See cmk_widget_replace().
- *
- * Convenience for
- * g_signal_emit_by_name(widget, "back");
- */
-void cmk_widget_back(CmkWidget *widget);
-
-/**
- * cmk_widget_add_child:
- *
- * Same as clutter_actor_add_child() but casts for you.
- */
-void cmk_widget_add_child(CmkWidget *widget, CmkWidget *child);
-
-/**
- * cmk_widget_bind_fill:
- *
- * Convenience method to use a #ClutterConstraint so that this widget
- * always fills its parent's allocation.
- * The bind can be removed by removing the clutter constraint
- * "cmk-widget-bind-fill"
- */
-void cmk_widget_bind_fill(CmkWidget *widget);
-
-/**
- * cmk_widget_fade_out:
- * @destroy: %TRUE to destroy the actor after the fade completes
- *
- * Fades out the actor and then hides it.
- */
-void cmk_widget_fade_out(CmkWidget *widget, gboolean destroy);
-
-/**
- * cmk_widget_fade_in:
- *
- * Shows the actor and fades it in.
- */
-void cmk_widget_fade_in(CmkWidget *widget);
-
-/**
- * cmk_widget_set_tabbable:
- *
- * If tabbable is %TRUE, this widget can receive keyboard focus through
- * the tab key. Otherwise, this widget will be skipped.
- * This value defaults to false. Widget subclasses should automatically
- * call this if the widget is reactive. (Also call clutter_actor_set_reactive()).
- */
-void cmk_widget_set_tabbable(CmkWidget *widget, gboolean tabbable);
-
-/**
- * cmk_widget_get_tabbable:
- *
- * Gets the value set in cmk_widget_set_tabbable().
- */
-gboolean cmk_widget_get_tabbable(CmkWidget *widget);
-
-/**
- * cmk_widget_set_tab_next:
- * @next: The widget to tab to, or NULL for default.
- * @prev: The widget to shift-tab (reverse) to, or NULL for default.
- *
- * Use this method to manually specify the next widget to receive
- * tab focus when the tab key is pressed on this widget. The default
- * value is to automatically find the next widget based on the
- * actor graph.
- */
-void cmk_widget_set_tab_next(CmkWidget *self, CmkWidget *next, CmkWidget *prev);
-
-/**
- * cmk_widget_get_tab_next:
- * @next: Return value for next in tab list.
- * @prev: Return value for next in shift-tab (reverse) list.
- *
- * Gets the value set in cmk_widget_set_tab_next(), or NULL if using
- * the automatic next tab widget.
- */
-void cmk_widget_get_tab_next(CmkWidget *self, CmkWidget **next, CmkWidget **prev);
-
-/**
- * cmk_widget_get_just_tabbed:
- *
- * Only useful for widget subclasses. Returns TRUE if this widget
- * has just gained focus from being tabbed to. Widgets might want
- * to use this flag to draw their widget differently so that the
- * user can see it has keyboard focus. This will stop returning
- * TRUE once focus has been lost.
- */
-gboolean cmk_widget_get_just_tabbed(CmkWidget *widget);
-
-/**
- * cmk_focus_stack_push:
- *
- * This method can be used to restrict keyboard focus to @widget
- * and its children. If keyboard focus is not within @widget when
- * this is called, keyboard focus is moved to @widget. Therefore
- * it is useful to call on popups and other full-screen actors.
- * If @widget is not mapped when this is called, focus will be
- * brought to @widget when it is mapped. This also calls cmk_grab.
- *
- * In almost all cases, @widget should be a reactive
- * (clutter_actor_set_reactive()) background/container actor.
- *
- * cmk_window_new() automatically calls this method on the returned
- * window widget, so that tabbing works before anything has been clicked.
- *
- * Call cmk_focus_stack_pop() to undo this effect.
- */
-void cmk_focus_stack_push(CmkWidget *widget);
-
-/**
- * cmk_focus_stack_pop:
- *
- * Undo the focus effect from cmk_focus_stack_push().
- */
-void cmk_focus_stack_pop(void);
-
-/**
- * CmkGrabHandler:
- * @grab: %TRUE when a grab has been started; %FALSE when a grab has stopped
- *
- * This could possibly called with multiple TRUEs in a row, so the
- * implementation should use some counting method to pair grabs to ungrabs.
- */
-typedef void (*CmkGrabHandler) (gboolean grab, gpointer userdata);
-
-/**
- * cmk_set_grab_handler:
- *
- * Set a handler to do extra functionality on grabs. This is useful
- * for window managers to grab all input, even over the area not
- * drawn by Clutter.
- */
-void cmk_set_grab_handler(CmkGrabHandler handler, gpointer userdata);
-
-/**
- * cmk_grab:
- * @grab: Set %TRUE to enable grab, %FALSE to disable
- *
- * Starts or stops a grab. Every call with grab set to %TRUE must be
- * paired with a call to grab set to %FALSE.
- */
-void cmk_grab(gboolean grab);
-
-/**
- * cmk_scale_actor_box:
- * @box: #ClutterActorBox to scale
- * @scale: Amount to scale
- * @move: %TRUE to scale x,y coordinates too; %FALSE to only scale size
- *
- * Convenience for scaling a #ClutterActorBox.
- */
-void cmk_scale_actor_box(ClutterActorBox *box, float scale, gboolean move);
-
-/**
- * cairo_set_source_clutter_color:
- *
- * Convenience for ClutterColor -> RGBA -> cairo_set_source_rgba().
- */
-void cairo_set_source_clutter_color(cairo_t *cr, const ClutterColor *color);
-
-/**
- * cmk_disabled_color:
- *
- * Converts @source into a "disabled" conversion of that color.
- * It's basically just RGB to grayscale, but a bit brighter and
- * opacity is reduced slightly.
- */
-void cmk_disabled_color(ClutterColor *dest, const ClutterColor *source);
-
-/*
- * cmk_copy_color:
- *
- * Copies @source to @dest.
- */
-void cmk_copy_color(ClutterColor *dest, const ClutterColor *source);
-
-G_END_DECLS
 
 #endif
