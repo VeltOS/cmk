@@ -1,7 +1,18 @@
-#include <glib.h>
+/*
+ * libcmk, Copyright 2018 Aidan Shafran <zelbrium@gmail.com>
+ * Apache License 2.0 <www.apache.org/licenses/LICENSE-2.0>.
+ */
+
+#include <stdbool.h>
+#include <stdint.h>
 
 /**
  * CmkEventType:
+ *
+ * The supported event types of Cmk. A single #CmkEvent will
+ * always be of one type, but CmkEventTypes are described in
+ * bitfield form for use with event_mask.
+ *
  * @CMK_EVENT_BUTTON: Mouse button event.
  * @CMK_EVENT_CROSSING: Mouse enter/leave event.
  * @CMK_EVENT_MOTION: Mouse motion event.
@@ -9,16 +20,18 @@
  * @CMK_EVENT_TEXT: Unicode text input event. Use this for inserting user-typed text.
  * @CMK_EVENT_FOCUS: Key focus / unfocus event. Usually caused by tabbing.
  * @CMK_EVENT_SCROLL: Scroll event.
+ * @CMK_EVENT_MASK_ALL: A mask for all event types.
  */
 typedef enum
 {
-	CMK_EVENT_BUTTON = 1,
-	CMK_EVENT_CROSSING,
-	CMK_EVENT_MOTION,
-	CMK_EVENT_KEY,
-	CMK_EVENT_TEXT,
-	CMK_EVENT_FOCUS,
-	CMK_EVENT_SCROLL,
+	CMK_EVENT_BUTTON   = 1 << 0,
+	CMK_EVENT_CROSSING = 1 << 1,
+	CMK_EVENT_MOTION   = 1 << 2,
+	CMK_EVENT_KEY      = 1 << 3,
+	CMK_EVENT_TEXT     = 1 << 4,
+	CMK_EVENT_FOCUS    = 1 << 5,
+	CMK_EVENT_SCROLL   = 1 << 6,
+	CMK_EVENT_MASK_ALL = (1 << 7) - 1
 } CmkEventType;
 
 /**
@@ -61,7 +74,7 @@ typedef enum
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
+	uint32_t time;
 } CmkEvent;
 
 /**
@@ -87,13 +100,13 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	guint modifiers;
+	uint32_t time;
+	unsigned int modifiers;
 	double x;
 	double y;
-	gboolean press;
-	guint button;
-	guint clickCount;
+	bool press;
+	unsigned int button;
+	unsigned int clickCount;
 } CmkEventButton;
 
 /**
@@ -110,10 +123,10 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
+	uint32_t time;
 	double x;
 	double y;
-	gboolean enter;
+	bool enter;
 } CmkEventCrossing;
 
 /**
@@ -130,8 +143,8 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	guint modifiers;
+	uint32_t time;
+	unsigned int modifiers;
 	double x;
 	double y;
 } CmkEventMotion;
@@ -155,8 +168,8 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	guint modifiers;
+	uint32_t time;
+	unsigned int modifiers;
 	double x;
 	double y;
 	double dx;
@@ -173,13 +186,15 @@ typedef struct
  * @time: Time of event, in milliseconds.
  * @modifiers: A mask of #CmkKeyModifiers.
  * @keyval: The raw key value.
+ * @press: TRUE on keypress, FALSE on release.
  */
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	guint modifiers;
-	guint keyval;
+	uint32_t time;
+	unsigned int modifiers;
+	unsigned int keyval;
+	bool press;
 } CmkEventKey;
 
 /**
@@ -192,8 +207,8 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	gchar *string;
+	uint32_t time;
+	char *string;
 } CmkEventText;
 
 /**
@@ -206,6 +221,6 @@ typedef struct
 typedef struct
 {
 	CmkEventType type;
-	guint32 time;
-	gboolean in;
+	uint32_t time;
+	bool in;
 } CmkEventFocus;

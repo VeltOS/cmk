@@ -4,14 +4,14 @@ project(libcmk)
 # Config
 set(CMK_VERSION 0.6)
 set(CMK_WITH_GTK TRUE)
-set(CMK_WITH_CLUTTER FALSE)
+set(CMK_WITH_CLUTTER TRUE)
 
 # Build settings
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_C_FLAGS "-Wall -Wextra -DUNUSED=G_GNUC_UNUSED")
+set(CMAKE_C_FLAGS "-Wall -Wextra -DUNUSED=__attribute__\\(\\(__unused__\\)\\)")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -g")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} -O3")
 
@@ -22,8 +22,10 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 # Create library target
-set(CMK_DEPENDENCIES glib-2.0>=2.54 cairo>=1.15)
+set(CMK_DEPENDENCIES cairo>=1.15)
 set(CMK_SOURCES
+	src/array.c
+	src/cmk-button.c
 	src/cmk-timeline.c
 	src/cmk-widget.c
 )
@@ -45,7 +47,7 @@ set_target_properties(cmk PROPERTIES SOVERSION ${CMK_VERSION} VERSION ${CMK_VERS
 target_link_libraries(cmk ${DEPS_LIBRARIES})
 target_include_directories(cmk PRIVATE ${DEPS_INCLUDE_DIRS})
 
-add_subdirectory(tests/gtk)
+add_subdirectory(tests)
 
 # Generate pkg-config file
 configure_file(libcmk.pc.in libcmk.pc @ONLY)

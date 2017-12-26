@@ -1,5 +1,0 @@
-if(CMK_WITH_GTK)
-	add_executable(gtk-test EXCLUDE_FROM_ALL gtk-test.c)
-	target_link_libraries(gtk-test cmk)
-	target_include_directories(gtk-test PRIVATE ${DEPS_INCLUDE_DIRS})
-endif()

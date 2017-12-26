@@ -1,4 +1,10 @@
+/*
+ * libcmk, Copyright 2018 Aidan Shafran <zelbrium@gmail.com>
+ * Apache License 2.0 <www.apache.org/licenses/LICENSE-2.0>.
+ */
+
 #include "cmk-gtk.h"
+#include "cmk-timeline.h"
 
 struct _CmkGtkWidget
 {
@@ -17,13 +23,15 @@ static void on_unmap(GtkWidget *self_);
 static void on_size_allocate(GtkWidget *self_, GtkAllocation *allocation);
 static gboolean on_draw(GtkWidget *self_, cairo_t *cr);
 static gboolean on_event(GtkWidget *self_, GdkEvent *event);
-static void on_disable(CmkGtkWidget *self, GParamSpec *spec, gpointer userdata);
+static void on_sensitivity_changed(CmkGtkWidget *self, GParamSpec *spec, gpointer userdata);
 static void get_preferred_width_for_height(GtkWidget *self_, gint height, gint *min, gint *nat);
 static void get_preferred_width(GtkWidget *self_, gint *min, gint *nat);
 static void get_preferred_height_for_width(GtkWidget *self_, gint width, gint *min, gint *nat);
 static void get_preferred_height(GtkWidget *self_, gint *min, gint *nat);
-static void on_widget_request_invalidate(CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self);
-static void on_widget_request_relayout(CmkWidget *widget, CmkGtkWidget *self);
+static void on_widget_request_invalidate(UNUSED CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self);
+static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self);
+static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self);
+static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
 
 G_DEFINE_TYPE(CmkGtkWidget, cmk_gtk_widget, GTK_TYPE_WIDGET);
@@ -31,7 +39,7 @@ G_DEFINE_TYPE(CmkGtkWidget, cmk_gtk_widget, GTK_TYPE_WIDGET);
 
 GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 {
-	g_return_val_if_fail(CMK_IS_WIDGET(widget), NULL);
+	g_return_val_if_fail(widget, NULL);
 
 	// Return existing wrapper object if available
 	CmkGtkWidget *wrapper = cmk_widget_get_wrapper(widget);
@@ -46,11 +54,14 @@ GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 	g_return_val_if_fail(CMK_IS_GTK_WIDGET(self), NULL);
 
 	// Connect wrapper and widget
-	self->widget = g_object_ref_sink(widget);
+	self->widget = cmk_widget_ref(widget);
 	cmk_widget_set_wrapper(widget, self);
+	cmk_widget_listen(widget, "invalidate", CMK_CALLBACK(on_widget_request_invalidate), self);
+	cmk_widget_listen(widget, "relayout", CMK_CALLBACK(on_widget_request_relayout), self);
+	cmk_widget_listen(widget, "event-mask", CMK_CALLBACK(on_widget_event_mask_changed), self);
+	g_signal_connect(self, "notify::sensitve", G_CALLBACK(on_sensitivity_changed), NULL);
 
-	// Call this again now that self->widget is set
-	cmk_gtk_widget_init(self);
+	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
 
 	return GTK_WIDGET(self);
 }
@@ -76,35 +87,28 @@ static void cmk_gtk_widget_class_init(CmkGtkWidgetClass *class)
 
 static void cmk_gtk_widget_init(CmkGtkWidget *self)
 {
-	if(self->widget == NULL)
-	{
-		// True cmk_gtk_widget_init
-
-		gtk_widget_set_has_window(GTK_WIDGET(self), FALSE);
-		gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
-		gtk_widget_set_can_default(GTK_WIDGET(self), TRUE);
-		gtk_widget_set_receives_default(GTK_WIDGET(self), TRUE);
-		return;
-	}
-
-	// Called again after self->widget is set
-
-	g_signal_connect(self->widget, "invalidate", G_CALLBACK(on_widget_request_invalidate), self);
-	g_signal_connect(self->widget, "relayout", G_CALLBACK(on_widget_request_relayout), self);
-	g_signal_connect(self, "notify::sensitve", G_CALLBACK(on_disable), NULL);
+	gtk_widget_set_has_window(GTK_WIDGET(self), FALSE);
+	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
+	gtk_widget_set_can_default(GTK_WIDGET(self), TRUE);
+	gtk_widget_set_receives_default(GTK_WIDGET(self), TRUE);
 }
 
 static void on_dispose(GObject *self_)
 {
 	CmkGtkWidget *self = CMK_GTK_WIDGET(self_);
 	if(self->widget)
-		g_signal_handlers_disconnect_by_data(self->widget, self);
-	g_clear_object(&self->widget);
+	{
+		cmk_widget_unlisten_by_userdata(self->widget, self);
+		cmk_widget_set_wrapper(self->widget, NULL);
+	}
+	g_clear_pointer(&self->widget, cmk_widget_unref);
 	G_OBJECT_CLASS(cmk_gtk_widget_parent_class)->dispose(self_);
 }
 
 static void on_realize(GtkWidget *self_)
 {
+	CmkGtkWidget *self = CMK_GTK_WIDGET(self_);
+
 	GtkAllocation allocation;
 	gtk_widget_get_allocation(self_, &allocation);
 
@@ -118,19 +122,17 @@ static void on_realize(GtkWidget *self_)
 	attributes.height = allocation.height;
 	attributes.wclass = GDK_INPUT_ONLY;
 	attributes.event_mask = gtk_widget_get_events(self_);
-	attributes.event_mask |= (GDK_BUTTON_PRESS_MASK |
-		GDK_BUTTON_RELEASE_MASK |
-		GDK_TOUCH_MASK |
-		GDK_ENTER_NOTIFY_MASK |
-		GDK_LEAVE_NOTIFY_MASK);
 
 	GdkWindow *window = gtk_widget_get_parent_window(self_);
 	gtk_widget_set_window(self_, window);
 	g_object_ref(window);
 
-	CMK_GTK_WIDGET(self_)->eventWindow = gdk_window_new(window,
+	self->eventWindow = gdk_window_new(window,
 		&attributes, GDK_WA_X | GDK_WA_Y);
 	gtk_widget_register_window(self_, CMK_GTK_WIDGET(self_)->eventWindow);
+
+	if(self->widget)
+		on_widget_event_mask_changed(self->widget, NULL, self);
 }
 
 
@@ -170,11 +172,24 @@ static void on_size_allocate(GtkWidget *self_, GtkAllocation *allocation)
 {
 	CmkGtkWidget *self = CMK_GTK_WIDGET(self_);
 
+	// Set widget allocation
 	gtk_widget_set_allocation(self_, allocation);
 	cmk_widget_set_size(self->widget,
 		(float)allocation->width, (float)allocation->height);
 
-	if(gtk_widget_get_realized(self_))
+	// Adjust the GtkWidget's clip to
+	// match the CmkWidget's draw_area
+	CmkRect rect;
+	cmk_widget_get_draw_rect(self->widget, &rect);
+	GdkRectangle clip = {
+		.x = (gint)rect.x + allocation->x,
+		.y = (gint)rect.y + allocation->y,
+		.width = rect.width,
+		.height = rect.height};
+	gtk_widget_set_clip(self_, &clip);
+
+	// Move event window
+	if(self->eventWindow)
 	{
 		gdk_window_move_resize(self->eventWindow,
 			allocation->x,
@@ -242,6 +257,10 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 
 	new.button.time = gdk_event_get_time(event);
 
+	// GdkEvent coordinates are window-relative, but it seems
+	// they're relative to the widget's window, not the toplevel
+	// window. So need to adjust coordinates.
+
 	// Convert GdkEvent to CmkEvent
 	switch(event->type)
 	{
@@ -264,8 +283,8 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 		break;
 	case GDK_MOTION_NOTIFY:
 		new.motion.type = CMK_EVENT_MOTION;
-		new.button.modifiers = translate_gdk_modifiers(event);
-		gdk_event_get_coords(event, &new.button.x, &new.button.y);
+		new.motion.modifiers = translate_gdk_modifiers(event);
+		gdk_event_get_coords(event, &new.motion.x, &new.motion.y);
 		break;
 	case GDK_SCROLL:
 		new.scroll.type = CMK_EVENT_SCROLL;
@@ -288,12 +307,14 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 	case GDK_KEY_RELEASE:
 		new.key.type = CMK_EVENT_KEY;
 		new.key.modifiers = translate_gdk_modifiers(event);
+		new.key.press = (event->type == GDK_KEY_PRESS);
 		gdk_event_get_keyval(event, &new.key.keyval);
 		break;
 	case GDK_FOCUS_CHANGE:
 		new.focus.type = CMK_EVENT_FOCUS;
 		new.focus.in = (gboolean)((GdkEventFocus *)event)->in;
 		break;
+	// TODO: CmkEventText
 	default:
 		// TODO: Unsupported event type.
 		return GDK_EVENT_PROPAGATE;
@@ -302,7 +323,7 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 	return cmk_widget_event(CMK_GTK_WIDGET(self_)->widget, (CmkEvent *)&new);
 }
 
-static void on_disable(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
+static void on_sensitivity_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
 {
 	cmk_widget_set_disabled(self->widget, !gtk_widget_get_sensitive(GTK_WIDGET(self)));
 }
@@ -346,18 +367,90 @@ static void get_preferred_height(GtkWidget *self_, gint *min, gint *nat)
 static void on_widget_request_invalidate(UNUSED CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self)
 {
 	if(region)
-		gtk_widget_queue_draw_region(GTK_WIDGET(self), region);
+	{
+		// Translate region to window coordinates
+		GtkAllocation allocation;
+		gtk_widget_get_allocation(GTK_WIDGET(self), &allocation);
+
+		cairo_region_t *r = cairo_region_copy(region);
+		cairo_region_translate(r, allocation.x, allocation.y);
+
+		gtk_widget_queue_draw_region(GTK_WIDGET(self), r);
+
+		cairo_region_destroy(r);
+	}
 	else
 		gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
-static void on_widget_request_relayout(UNUSED CmkWidget *widget, CmkGtkWidget *self)
+static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self)
 {
 	gtk_widget_queue_resize(GTK_WIDGET(self));
+}
+
+static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self)
+{
+	if(!self->eventWindow)
+		return;
+
+	unsigned int widgetMask = cmk_widget_get_event_mask(widget);
+	guint events = 0;
+
+	if(widgetMask & CMK_EVENT_BUTTON)
+		events |= GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK;
+	if(widgetMask & CMK_EVENT_CROSSING)
+		events |= GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK;
+	if(widgetMask & CMK_EVENT_MOTION)
+		events |= GDK_POINTER_MOTION_MASK | GDK_BUTTON_MOTION_MASK;
+	if(widgetMask & CMK_EVENT_KEY)
+		events |= GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK;
+	// TODO: CMK_EVENT_TEXT ?
+	if(widgetMask & CMK_EVENT_FOCUS)
+		events |= GDK_FOCUS_CHANGE_MASK;
+	if(widgetMask & CMK_EVENT_SCROLL)
+		events |= GDK_SCROLL_MASK;
+	
+	events |= gtk_widget_get_events(GTK_WIDGET(self));
+
+	gdk_window_set_events(self->eventWindow, events);
 }
 
 CmkWidget * cmk_gtk_widget_get_widget(CmkGtkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_GTK_WIDGET(self), NULL);
 	return self->widget;
+}
+
+
+static gboolean on_frame(UNUSED GtkWidget *self_, GdkFrameClock *clock, gpointer timeline)
+{
+	cmk_timeline_update(timeline, gdk_frame_clock_get_frame_time(clock));
+	return G_SOURCE_CONTINUE;
+}
+
+static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata)
+{
+	// Get the GtkWidget that this CmkTimeline belongs to
+	CmkWidget *widget = cmk_timeline_get_widget(timeline);
+	GtkWidget *gtkwidget = GTK_WIDGET(cmk_widget_get_wrapper(widget));
+	g_return_val_if_fail(CMK_IS_GTK_WIDGET(gtkwidget), NULL);
+
+	// Get the time
+	if(time)
+		*time = gdk_frame_clock_get_frame_time(gtk_widget_get_frame_clock(gtkwidget));
+
+	if(start) // Request to start timeline
+	{
+		cmk_timeline_ref(timeline);
+		gint id = gtk_widget_add_tick_callback(gtkwidget,
+			on_frame, timeline, (GDestroyNotify)cmk_timeline_unref);
+
+		// This is passed back as userdata in the 'stop' event
+		return GINT_TO_POINTER(id);
+	}
+	else // Request to stop timeline
+	{
+		gtk_widget_remove_tick_callback(gtkwidget, GPOINTER_TO_INT(userdata));
+		return NULL;
+	}
 }

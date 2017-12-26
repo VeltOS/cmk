@@ -32,7 +32,7 @@ Building
 Depends on:
 
 	- cmake (build only)
-	- glib2
+	- cairo
 	- gtk3 (optional; for building with GTK+ support)
 	- clutter-1.0 (optional; for building with Clutter support)
 
@@ -52,7 +52,7 @@ License
 
 Cmk is under the Apache License 2.0. This means you can freely compile and
 and use it in binary form (including static linkage) without restriction, but
-forks must retain attribution to the original authors. For full details,
+derivatives must retain attribution to the original authors. For full details,
 visit https://www.apache.org/licenses/LICENSE-2.0 .
 
 Authors
