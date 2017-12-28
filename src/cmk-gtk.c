@@ -24,6 +24,7 @@ static void on_size_allocate(GtkWidget *self_, GtkAllocation *allocation);
 static gboolean on_draw(GtkWidget *self_, cairo_t *cr);
 static gboolean on_event(GtkWidget *self_, GdkEvent *event);
 static void on_sensitivity_changed(CmkGtkWidget *self, GParamSpec *spec, gpointer userdata);
+static void on_text_direction_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata);
 static void get_preferred_width_for_height(GtkWidget *self_, gint height, gint *min, gint *nat);
 static void get_preferred_width(GtkWidget *self_, gint *min, gint *nat);
 static void get_preferred_height_for_width(GtkWidget *self_, gint width, gint *min, gint *nat);
@@ -60,6 +61,7 @@ GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 	cmk_widget_listen(widget, "relayout", CMK_CALLBACK(on_widget_request_relayout), self);
 	cmk_widget_listen(widget, "event-mask", CMK_CALLBACK(on_widget_event_mask_changed), self);
 	g_signal_connect(self, "notify::sensitve", G_CALLBACK(on_sensitivity_changed), NULL);
+	g_signal_connect(self, "notify::direction-changed", G_CALLBACK(on_text_direction_changed), NULL);
 
 	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
 
@@ -326,6 +328,11 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 static void on_sensitivity_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
 {
 	cmk_widget_set_disabled(self->widget, !gtk_widget_get_sensitive(GTK_WIDGET(self)));
+}
+
+static void on_text_direction_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
+{
+	cmk_widget_set_text_direction(self->widget, gtk_widget_get_direction(GTK_WIDGET(self)) == GTK_TEXT_DIR_RTL);
 }
 
 static void get_preferred_width_for_height(GtkWidget *self_, gint height, gint *min, gint *nat)

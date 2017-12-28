@@ -22,12 +22,13 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 # Create library target
-set(CMK_DEPENDENCIES cairo>=1.15)
+set(CMK_DEPENDENCIES cairo>=1.15 pango>=1.40)
 set(CMK_SOURCES
 	src/array.c
 	src/cmk-button.c
 	src/cmk-timeline.c
 	src/cmk-widget.c
+	src/cmk-label.c
 )
 
 if(CMK_WITH_GTK)

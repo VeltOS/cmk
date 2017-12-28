@@ -10,6 +10,7 @@
 #include "cmk-timeline.h"
 #include <cogl/cogl.h>
 #include <cairo/cairo.h>
+#include <math.h>
 
 struct _CmkClutterWidget
 {
@@ -33,6 +34,7 @@ static void on_dispose(GObject *self_);
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static gboolean on_event(ClutterActor *self_, ClutterEvent *event);
 static void on_reactive_changed(CmkClutterWidget *self, GParamSpec *spec, gpointer userdata);
+static void on_text_direction_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata);
 static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root);
 static gboolean get_paint_volume(ClutterActor *self_, ClutterPaintVolume *volume);
 static void get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *min, gfloat *nat);
@@ -69,6 +71,7 @@ ClutterActor * cmk_widget_to_clutter(CmkWidget *widget)
 	cmk_widget_listen(widget, "relayout", CMK_CALLBACK(on_widget_request_relayout), self);
 	cmk_widget_listen(widget, "event-mask", CMK_CALLBACK(on_widget_event_mask_changed), self);
 	g_signal_connect(self, "notify::reactive", G_CALLBACK(on_reactive_changed), NULL);
+	g_signal_connect(self, "notify::text-direction", G_CALLBACK(on_text_direction_changed), NULL);
 
 	cmk_timeline_set_handler_callback(cmk_clutter_timeline_callback, false);
 
@@ -249,6 +252,11 @@ static void on_reactive_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec,
 	cmk_widget_set_disabled(self->widget, !clutter_actor_get_reactive(CLUTTER_ACTOR(self)));
 }
 
+static void on_text_direction_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
+{
+	cmk_widget_set_text_direction(self->widget, clutter_actor_get_text_direction(CLUTTER_ACTOR(self)) == CLUTTER_TEXT_DIRECTION_RTL);
+}
+
 // http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
 static inline guint32 next_pot(guint32 v)
 {
@@ -267,8 +275,8 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 	CmkClutterWidget *self = CMK_CLUTTER_WIDGET(self_);
 
 	const ClutterPaintVolume *volume = clutter_actor_get_paint_volume(self_);
-	gfloat width = clutter_paint_volume_get_width(volume);
-	gfloat height = clutter_paint_volume_get_height(volume);
+	int width = ceil(clutter_paint_volume_get_width(volume));
+	int height = ceil(clutter_paint_volume_get_height(volume));
 
 	ClutterVertex origin;
 	clutter_paint_volume_get_origin(volume, &origin);
@@ -279,15 +287,6 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 		.y2 = origin.y + height,
 	};
 
-	gint surfWidth = width, surfHeight = height;
-	guint texWidth = width, texHeight = height;
-	// Some GPUs don't support non-power-of-two textures
-	if(!self->npot)
-	{
-		texWidth = next_pot(texWidth);
-		texHeight = next_pot(texHeight);
-	}
-
 	int windowScale = 1;
 	// Not all builds of Clutter (specifically mutter-clutter
 	// since commit 20fcb8863293) have this property, so make
@@ -296,10 +295,16 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 	if(g_object_class_find_property(G_OBJECT_GET_CLASS(settings), "window-scaling-factor") != NULL)
 		g_object_get(settings, "window-scaling-factor", &windowScale, NULL);
 
-	texWidth *= windowScale;
-	texHeight *= windowScale;
-	surfWidth *= windowScale;
-	surfHeight *= windowScale;
+	width *= windowScale;
+	height *= windowScale;
+
+	// Some GPUs don't support non-power-of-two textures
+	guint texWidth = width, texHeight = height;
+	if(!self->npot)
+	{
+		texWidth = next_pot(texWidth);
+		texHeight = next_pot(texHeight);
+	}
 
 	// Ensure a large enough texture exists to draw into
 	if(!self->tex
@@ -318,14 +323,14 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 
 	// Ensure a big enough surface
 	if(!self->surface
-	|| cairo_image_surface_get_width(self->surface) < surfWidth
-	|| cairo_image_surface_get_height(self->surface) < surfHeight
-	|| cairo_image_surface_get_width(self->surface) > surfWidth * 2
-	|| cairo_image_surface_get_height(self->surface) > surfHeight * 2)
+	|| cairo_image_surface_get_width(self->surface) < width
+	|| cairo_image_surface_get_height(self->surface) < height
+	|| cairo_image_surface_get_width(self->surface) > width * 2
+	|| cairo_image_surface_get_height(self->surface) > height * 2)
 	{
 		if(self->surface)
 			cairo_surface_destroy(self->surface);
-		self->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, surfWidth, surfHeight);
+		self->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
 		cairo_surface_set_device_scale(self->surface, windowScale, windowScale);
 
 		// New surface, so the whole thing is dirty
@@ -388,8 +393,8 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 		cogl_texture_set_region(self->tex,
 			0, 0,
 			0, 0,
-			width * windowScale, height * windowScale,
-			width * windowScale, height * windowScale,
+			width, height,
+			width, height,
 			CLUTTER_CAIRO_FORMAT_ARGB32,
 			stride,
 			data);
@@ -409,8 +414,8 @@ static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root)
 	// so only use the part of the texture that is drawn into.
 	clutter_paint_node_add_texture_rectangle(node, &box,
 		0, 0,
-		width * windowScale / cogl_texture_get_width(self->tex),
-		height * windowScale / cogl_texture_get_width(self->tex));
+		width / cogl_texture_get_width(self->tex),
+		height / cogl_texture_get_height(self->tex));
 
 	clutter_paint_node_add_child(root, node);
 	clutter_paint_node_unref(node);

@@ -87,6 +87,7 @@ typedef struct
 	void (*get_preferred_width) (CmkWidget *self, float forHeight, float *min, float *nat);
 	void (*get_preferred_height) (CmkWidget *self, float forWidth, float *min, float *nat);
 	void (*get_draw_rect) (CmkWidget *self, CmkRect *rect);
+	void (*text_direction_changed) (CmkWidget *self, bool rtl);
 } CmkWidgetClass;
 
 extern CmkWidgetClass *cmk_widget_class;
@@ -287,6 +288,10 @@ void cmk_widget_get_size(CmkWidget *widget, float *width, float *height);
  * cmk_widget_set_disabled:
  *
  * Sets or unsets the disabled flag, and invalidates the widget.
+ *
+ * This is automatically called by the #CmkWidget wrappers which
+ * have a disabled property, including #CmkGtkWidget and
+ * #CmkClutterWidget.
  */
 void cmk_widget_set_disabled(CmkWidget *widget, bool disabled);
 
@@ -294,5 +299,25 @@ void cmk_widget_set_disabled(CmkWidget *widget, bool disabled);
  * cmk_widget_get_disabled:
  */
 bool cmk_widget_get_disabled(CmkWidget *widget);
+
+/**
+ * cmk_widget_set_text_direction:
+ *
+ * Sets the default text direction on the widget. This is
+ * automatically called by the #CmkWidget wrappers which support
+ * it, including #CmkGtkWidget and #CmkClutterWidget.
+ *
+ * @rtl: True for default right-to-left, false for left-to-right.
+ */
+void cmk_widget_set_text_direction(CmkWidget *widget, bool rtl);
+
+/**
+ * cmk_widget_get_text_direction:
+ *
+ * Gets the default text direction.
+ *
+ * Returns: True for default right-to-left, false for left-to-right.
+ */
+bool cmk_widget_get_text_direction(CmkWidget *widget);
 
 #endif

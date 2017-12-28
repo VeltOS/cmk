@@ -1,11 +1,11 @@
 if(CMK_WITH_GTK)
-	add_executable(gtk-test EXCLUDE_FROM_ALL gtk-test.c)
+	add_executable(gtk-test gtk-test.c)
 	target_link_libraries(gtk-test cmk)
 	target_include_directories(gtk-test PRIVATE ${DEPS_INCLUDE_DIRS})
 endif()
 
 if(CMK_WITH_CLUTTER)
-	add_executable(clutter-test EXCLUDE_FROM_ALL clutter-test.c)
+	add_executable(clutter-test clutter-test.c)
 	target_link_libraries(clutter-test cmk)
 	target_include_directories(clutter-test PRIVATE ${DEPS_INCLUDE_DIRS})
 endif()

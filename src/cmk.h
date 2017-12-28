@@ -5,3 +5,4 @@
 
 #include "cmk-widget.h"
 #include "cmk-button.h"
+#include "cmk-label.h"

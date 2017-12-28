@@ -22,13 +22,20 @@ int main(int argc, char **argv)
 	gtk_widget_set_halign(box, GTK_ALIGN_CENTER);
 
 	// Add widget
-	CmkButton *button = cmk_button_new(CMK_BUTTON_FLAT);
+	CmkLabel *button = cmk_label_new_with_text("abcdefghijklm nopqrstuvwxyz");
+	PangoLayout *layout = cmk_label_get_layout(button);
+	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
 	//gtk_box_pack_start(GTK_BOX(box
 	gtk_box_set_center_widget(GTK_BOX(box), CMK_GTK(button));
 	//gtk_container_add(GTK_CONTAINER(vbox), CMK_GTK(button));
 	gtk_widget_set_valign(CMK_GTK(button), GTK_ALIGN_CENTER);
 	gtk_widget_set_halign(CMK_GTK(button), GTK_ALIGN_CENTER);
 	gtk_widget_show(CMK_GTK(button));
+
+	cmk_label_set_global_font_properties(96,
+		pango_font_description_from_string("noto sans 11"),
+		pango_font_description_from_string("noto sans mono 11"),
+		false);
 
 	//gtk_container_add(GTK_CONTAINER(vbox), box);
 	gtk_box_set_center_widget(GTK_BOX(vbox), box);

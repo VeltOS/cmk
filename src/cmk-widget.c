@@ -30,6 +30,7 @@ typedef struct
 	Listener *listeners;
 
 	bool disabled;
+	bool rtl;
 	unsigned int eventMask;
 	float setWidth, setHeight;
 
@@ -50,6 +51,7 @@ static void on_disable(CmkWidget *self, bool disabled);
 static void get_preferred_width(CmkWidget *self, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self, CmkRect *rect);
+static void text_direction_changed(CmkWidget *self, bool rtl);
 static void free_listener(void *listener);
 
 
@@ -72,6 +74,7 @@ void cmk_widget_init(CmkWidget *self)
 		cmk_widget_class->get_preferred_width = get_preferred_width;
 		cmk_widget_class->get_preferred_height = get_preferred_height;
 		cmk_widget_class->get_draw_rect = get_draw_rect;
+		cmk_widget_class->text_direction_changed = text_direction_changed;
 	}
 
 	self->class = cmk_widget_class;
@@ -147,6 +150,11 @@ static void get_draw_rect(CmkWidget *self, CmkRect *rect)
 	rect->x = rect->y = 0;
 	rect->width = PRIV(self)->setWidth;
 	rect->height = PRIV(self)->setHeight;
+}
+
+static void text_direction_changed(CmkWidget *self, bool rtl)
+{
+	cmk_widget_invalidate(self, NULL);
 }
 
 void cmk_widget_set_wrapper(CmkWidget *self, void *wrapper)
@@ -388,6 +396,23 @@ bool cmk_widget_get_disabled(CmkWidget *self)
 {
 	cmk_return_if_fail(self, false);
 	return PRIV(self)->disabled;
+}
+
+void cmk_widget_set_text_direction(CmkWidget *self, bool rtl)
+{
+	cmk_return_if_fail(self, );
+	if(PRIV(self)->rtl != rtl)
+	{
+		PRIV(self)->rtl = rtl;
+		if(CLASS(self)->text_direction_changed)
+			CLASS(self)->text_direction_changed(self, rtl);
+	}
+}
+
+bool cmk_widget_get_text_direction(CmkWidget *self)
+{
+	cmk_return_if_fail(self, false);
+	return PRIV(self)->rtl;
 }
 
 static void free_listener(void *listener)
