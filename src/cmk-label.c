@@ -8,110 +8,233 @@
 #include <limits.h>
 #include <pango/pangocairo.h>
 #include "cmk-label.h"
-#include "array.h"
 
-#define PRIV(self) ((CmkLabelPrivate *)((self)->priv))
+#define CMK_LABEL_EVENT_MASK 0
 
-CmkLabelClass *cmk_label_class = NULL;
+// Only set when a CmkLabel exists
+static PangoContext *gDefaultContext = NULL;
 
-typedef struct
+typedef struct _CmkLabelPrivate CmkLabelPrivate;
+struct _CmkLabelPrivate
 {
+	PangoContext *defaultContextRef;
 	PangoContext *context;
+	bool contextIsSet; // true if set, false if using default context
+
+	// When using a set context, keep track of serial to
+	// make sure it actually changed before doing relayout
+	guint contextSerial;
+
 	PangoLayout *layout;
 	bool singleline;
+};
 
-	int useDefaultFamily; // 0 no, 1 yes, 2 yes (mono)
-	bool useDefaultSize;
+enum
+{
+	PROP_PANGO_CONTEXT = 1,
+	PROP_TEXT,
+	PROP_SINGLE_LINE,
+	// TODO
+	//PROP_ALIGNMENT,
+	PROP_BOLD,
+	//PROP_FONT_SIZE,
+	//PROP_FONT_FAMILY,
+	PROP_LAST,
+	PROP_OVERRIDE_EVENT_MASK
+};
 
-} CmkLabelPrivate;
+static GParamSpec *properties[PROP_LAST];
 
-static void on_destroy(CmkWidget *self_);
+G_DEFINE_TYPE_WITH_PRIVATE(CmkLabel, cmk_label, CMK_TYPE_WIDGET);
+#define PRIV(label) ((CmkLabelPrivate *)cmk_label_get_instance_private(label))
+
+static void on_dispose(GObject *self_);
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
 static void on_draw(CmkWidget *self_, cairo_t *cr);
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect);
-static void on_global_properties_changed(void *self_);
-static void text_direction_changed(CmkWidget *self_, bool rtl);
+
+static void set_pango_context(CmkLabel *self, PangoContext *context);
+
+static PangoLayout * cmk_pango_layout_copy_new_context(PangoLayout *original, PangoContext *context);
 
 
-CmkLabel * cmk_label_new(void)
+CmkLabel * cmk_label_new(const char *text)
 {
-	CmkLabel *self = calloc(sizeof(CmkLabel), 1);
-	cmk_label_init(self);
-	return self;
+	return CMK_LABEL(g_object_new(CMK_TYPE_LABEL,
+		"text", text,
+		NULL));
 }
 
-CmkLabel * cmk_label_new_with_text(const char *text)
+CmkLabel * cmk_label_new_bold(const char *text)
 {
-	CmkLabel *label = cmk_label_new();
-	cmk_label_set_text(label, text);
-	return label;
+	return CMK_LABEL(g_object_new(CMK_TYPE_LABEL,
+		"text", text,
+		"bold", true,
+		NULL));
 }
 
-void cmk_label_init(CmkLabel *self)
+static void cmk_label_class_init(CmkLabelClass *class)
 {
-	cmk_widget_init((CmkWidget *)self);
+	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->dispose = on_dispose;
+	base->get_property = get_property;
+	base->set_property = set_property;
 
-	if(cmk_label_class == NULL)
+	CmkWidgetClass *widgetClass = CMK_WIDGET_CLASS(class);
+	widgetClass->draw = on_draw;
+	widgetClass->get_preferred_width = get_preferred_width;
+	widgetClass->get_preferred_height = get_preferred_height;
+	widgetClass->get_draw_rect = get_draw_rect;
+
+	/**
+	 * CmkLabel:pango-context:
+	 *
+	 * Sets the Pango context to use, or NULL to use
+	 * a default context. This can be set by the
+	 * widget wrapper class.
+	 */
+	properties[PROP_PANGO_CONTEXT] =
+		g_param_spec_object("pango-context", "pango context", "pango context",
+		                    PANGO_TYPE_CONTEXT,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkWidget:text:
+	 *
+	 * The text being displayed.
+	 */
+	properties[PROP_TEXT] =
+		g_param_spec_string("text", "text", "text",
+		                    NULL,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkWidget:single-line:
+	 *
+	 * To force only a single line of text.
+	 */
+	properties[PROP_SINGLE_LINE] =
+		g_param_spec_boolean("single-line", "single line", "single line",
+		                     false,
+		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkWidget:bold:
+	 *
+	 * Bold text or not. More specific variation of font weight
+	 * can be made using the PangoLayout object from
+	 * cmk_label_get_layout().
+	 */
+	properties[PROP_BOLD] =
+		g_param_spec_boolean("bold", "bold", "bold",
+		                     false,
+		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
+
+	g_object_class_override_property(base, PROP_OVERRIDE_EVENT_MASK, "event-mask");
+}
+
+static void cmk_label_init(CmkLabel *self)
+{
+	CmkLabelPrivate *priv = PRIV(self);
+	//priv->useDefaultSize = true;
+
+	// Make sure the default context exists
+	if(PANGO_IS_CONTEXT(gDefaultContext))
 	{
-		cmk_label_class = calloc(sizeof(CmkLabelClass), 1);
-		CmkWidgetClass *widgetClass = &cmk_label_class->parentClass;
-		*widgetClass = *cmk_widget_class;
-		widgetClass->destroy = on_destroy;
-		widgetClass->draw = on_draw;
-		widgetClass->get_preferred_width = get_preferred_width;
-		widgetClass->get_preferred_height = get_preferred_height;
-		widgetClass->get_draw_rect = get_draw_rect;
-		widgetClass->text_direction_changed = text_direction_changed;
+		// Keep the default context around while any CmkLabels exist
+		priv->defaultContextRef = g_object_ref(gDefaultContext);
+	}
+	else
+	{
+		PangoFontMap *fontmap = pango_cairo_font_map_get_default();
+		gDefaultContext = pango_font_map_create_context(fontmap);
+		g_object_add_weak_pointer(G_OBJECT(gDefaultContext), (gpointer *)&gDefaultContext);
+		priv->defaultContextRef = gDefaultContext;
 	}
 
-	((CmkWidget *)self)->class = cmk_label_class;
-	self->priv = calloc(sizeof(CmkLabelPrivate), 1);
-	PRIV(self)->useDefaultFamily = 1;
-	PRIV(self)->useDefaultSize = true;
-
-	cmk_widget_set_event_mask((CmkWidget *)self, 0);
-
-	// Listen for changes to global properties
-	cmk_label_global_properties_listen(on_global_properties_changed, self);
-
-	// Create Pango context
-	PangoFontMap *fontmap = pango_cairo_font_map_get_default();
-	PRIV(self)->context = pango_font_map_create_context(fontmap);
-
-	unsigned int resolution;
-	const PangoFontDescription *desc;
-	bool baseRTL;
-	cmk_label_get_global_font_properties(&resolution, &desc, NULL, &baseRTL);
-
-	pango_cairo_context_set_resolution(PRIV(self)->context, resolution);
-	pango_context_set_font_description(PRIV(self)->context, desc);
-	pango_context_set_base_dir(PRIV(self)->context,
-		baseRTL ? PANGO_DIRECTION_RTL : PANGO_DIRECTION_LTR);
-
-	PRIV(self)->layout = pango_layout_new(PRIV(self)->context);
+	// Initialize to default context
+	priv->context = g_object_ref(priv->defaultContextRef);
+	priv->layout = pango_layout_new(priv->context);
+	priv->contextIsSet = false;
 }
 
-static void on_destroy(CmkWidget *self_)
+static void on_dispose(GObject *self_)
 {
-	// Unlisten
-	cmk_label_global_properties_listen(on_global_properties_changed, NULL);
+	CmkLabelPrivate *priv = PRIV(CMK_LABEL(self_));
+	g_clear_object(&priv->layout);
+	g_clear_object(&priv->context);
+	g_clear_object(&priv->defaultContextRef);
+	G_OBJECT_CLASS(cmk_label_parent_class)->dispose(self_);
+}
 
-	free(((CmkLabel *)self_)->priv);
-	cmk_widget_class->destroy(self_);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec)
+{
+	CmkLabel *self = CMK_LABEL(self_);
+	
+	switch(id)
+	{
+	case PROP_PANGO_CONTEXT:
+		g_value_set_object(value, PRIV(self)->contextIsSet ? PRIV(self)->context : NULL);
+		break;
+	case PROP_TEXT:
+		g_value_set_string(value, cmk_label_get_text(self));
+		break;
+	case PROP_SINGLE_LINE:
+		g_value_set_boolean(value, PRIV(self)->singleline);
+		break;
+	case PROP_BOLD:
+		g_value_set_boolean(value, cmk_label_get_bold(self));
+		break;
+	case PROP_OVERRIDE_EVENT_MASK:
+		g_value_set_uint(value, CMK_LABEL_EVENT_MASK);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
+	}
+}
+
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec)
+{
+	CmkLabel *self = CMK_LABEL(self_);
+	
+	switch(id)
+	{
+	case PROP_PANGO_CONTEXT:
+		set_pango_context(self, PANGO_CONTEXT(g_value_get_object(value)));
+		break;
+	case PROP_TEXT:
+		cmk_label_set_text(self, g_value_get_string(value));
+		break;
+	case PROP_SINGLE_LINE:
+		cmk_label_set_single_line(self, g_value_get_boolean(value));
+		break;
+	case PROP_BOLD:
+		cmk_label_set_bold(self, g_value_get_boolean(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
+	}
 }
 
 static void on_draw(CmkWidget *self_, cairo_t *cr)
 {
-	PangoLayout *layout = PRIV((CmkLabel *)self_)->layout;
+	CmkLabelPrivate *priv = PRIV(CMK_LABEL(self_));
+	PangoLayout *layout = priv->layout;
 
-	pango_cairo_update_context(cr, PRIV((CmkLabel *)self_)->context);
+	pango_cairo_update_context(cr, priv->context);
 
 	float width, height;
 	cmk_widget_get_size(self_, &width, &height);
 	pango_layout_set_width(layout, width * PANGO_SCALE);
 
-	if(PRIV((CmkLabel *)self_)->singleline)
+	if(priv->singleline)
 		pango_layout_set_height(layout, 0);
 	else
 		pango_layout_set_height(layout, height * PANGO_SCALE);
@@ -121,13 +244,14 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat)
 {
-	PangoLayout *layout = PRIV((CmkLabel *)self_)->layout;
+	CmkLabelPrivate *priv = PRIV(CMK_LABEL(self_));
+	PangoLayout *layout = priv->layout;
 	int originalWidth = pango_layout_get_width(layout);
 	int originalHeight = pango_layout_get_height(layout);
 
 	pango_layout_set_width(layout, -1);
 
-	if(PRIV((CmkLabel *)self_)->singleline)
+	if(priv->singleline)
 		pango_layout_set_height(layout, 0);
 	else if(forHeight >= 0)
 		pango_layout_set_height(layout, forHeight * PANGO_SCALE);
@@ -136,7 +260,7 @@ static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, f
 
 	PangoRectangle logicalRect = {0};
 	pango_layout_get_extents(layout, NULL, &logicalRect);
-	float logicalWidth = (float)(logicalRect.x + logicalRect.width) / PANGO_SCALE + 200;
+	float logicalWidth = (float)(logicalRect.x + logicalRect.width) / PANGO_SCALE;
 
 	if(pango_layout_get_ellipsize(layout) != PANGO_ELLIPSIZE_NONE)
 		*min = 0;
@@ -151,8 +275,8 @@ static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, f
 
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat)
 {
-	bool singleline = PRIV((CmkLabel *)self_)->singleline;
-	PangoLayout *layout = PRIV((CmkLabel *)self_)->layout;
+	CmkLabelPrivate *priv = PRIV(CMK_LABEL(self_));
+	PangoLayout *layout = priv->layout;
 	int originalWidth = pango_layout_get_width(layout);
 	int originalHeight = pango_layout_get_height(layout);
 
@@ -161,7 +285,7 @@ static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, f
 
 	pango_layout_set_width(layout, forWidth * PANGO_SCALE);
 
-	if(singleline)
+	if(priv->singleline)
 		pango_layout_set_height(layout, 0);
 	else
 		pango_layout_set_height(layout, INT_MAX);
@@ -170,7 +294,7 @@ static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, f
 	pango_layout_get_extents(layout, NULL, &logicalRect);
 	float logicalHeight = (float)(logicalRect.y + logicalRect.height) / PANGO_SCALE;
 
-	if(!singleline
+	if(!priv->singleline
 	&& pango_layout_get_ellipsize(layout) != PANGO_ELLIPSIZE_NONE)
 	{
 		// In the case of ellipsizing, the minimum height is 1 line.
@@ -189,7 +313,7 @@ static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, f
 
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 {
-	PangoLayout *layout = PRIV((CmkLabel *)self_)->layout;
+	PangoLayout *layout = PRIV(CMK_LABEL(self_))->layout;
 
 	float width, height;
 	cmk_widget_get_size(self_, &width, &height);
@@ -206,183 +330,176 @@ static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 	rect->height = (float)inkRect.height / PANGO_SCALE;
 }
 
-static void on_global_properties_changed(void *self_)
-{
-	CmkLabel *self = self_;
-
-	unsigned int resolution;
-	const PangoFontDescription *desc;
-	bool baseRTL;
-	cmk_label_get_global_font_properties(&resolution, &desc, NULL, &baseRTL);
-
-	pango_cairo_context_set_resolution(PRIV(self)->context, resolution);
-	pango_context_set_font_description(PRIV(self)->context, desc);
-	pango_context_set_base_dir(PRIV(self)->context,
-		baseRTL ? PANGO_DIRECTION_RTL : PANGO_DIRECTION_LTR);
-	
-	pango_layout_context_changed(PRIV(self)->layout);
-
-	// Update layout's family + size if set to default
-	if(PRIV(self)->useDefaultFamily == 1) // yes
-		cmk_label_set_font_family(self, NULL);
-	else if(PRIV(self)->useDefaultFamily == 2) // yes (mono)
-		cmk_label_set_font_family(self, "mono");
-
-	if(PRIV(self)->useDefaultSize)
-		cmk_label_set_font_size(self, -1);
-
-	cmk_widget_invalidate((CmkWidget *)self, NULL);
-}
-
-static void text_direction_changed(CmkWidget *self_, bool rtl)
-{
-	pango_context_set_base_dir(PRIV((CmkLabel *)self_)->context,
-		rtl ? PANGO_DIRECTION_RTL : PANGO_DIRECTION_LTR);
-	pango_layout_context_changed(PRIV((CmkLabel *)self_)->layout);
-
-	cmk_widget_class->text_direction_changed(self_, rtl);
-}
-
 void cmk_label_set_text(CmkLabel *self, const char *text)
 {
-	cmk_return_if_fail(self, )
-	pango_layout_set_text(PRIV(self)->layout, text, -1);
+	g_return_if_fail(CMK_IS_LABEL(self));
+	pango_layout_set_text(PRIV(self)->layout, text ? text : "", -1);
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_TEXT]);
 }
 
 void cmk_label_set_markup(CmkLabel *self, const char *markup)
 {
-	cmk_return_if_fail(self, )
+	g_return_if_fail(CMK_IS_LABEL(self));
 	pango_layout_set_markup(PRIV(self)->layout, markup, -1);
+	cmk_widget_relayout(CMK_WIDGET(self));
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_TEXT]);
 }
 
 const char * cmk_label_get_text(CmkLabel *self)
 {
-	cmk_return_if_fail(self, NULL)
+	g_return_val_if_fail(CMK_IS_LABEL(self), NULL);
 	return pango_layout_get_text(PRIV(self)->layout);
 }
 
-static const PangoFontDescription * get_font_desc(CmkLabel *self)
+#define context_font_desc(priv) pango_context_get_font_description(priv->context)
+#define layout_font_desc(priv) pango_layout_get_font_description(priv->layout)
+#define desc_has_set(desc, flag) ((desc != NULL) && ((pango_font_description_get_set_fields(desc) & (flag)) != 0))
+
+// Gets the layout's font description, or a blank one if the
+// layout's was NULL. Good for writing values. Must free.
+static PangoFontDescription * get_write_font_desc(CmkLabel *self)
 {
-	const PangoFontDescription *desc = pango_layout_get_font_description(PRIV(self)->layout);
-	if(!desc)
-		desc = pango_context_get_font_description(PRIV(self)->context);
-	if(!desc)
-		cmk_label_get_global_font_properties(NULL, &desc, NULL, NULL);
-	return desc;
+	const PangoFontDescription *d = pango_layout_get_font_description(PRIV(self)->layout);
+	return d ? pango_font_description_copy(d) : pango_font_description_new();
 }
 
-static PangoFontDescription * get_font_desc_copy(CmkLabel *self)
+// Unset value(s) on the layout's font description,
+// which will cause the context's values to be used
+static void font_desc_unset(CmkLabel *self, PangoFontMask mask)
 {
-	return pango_font_description_copy(get_font_desc(self));
+	CmkLabelPrivate *priv = PRIV(self);
+
+	const PangoFontDescription *d = layout_font_desc(priv);
+	if(!d)
+		return;
+
+	PangoFontDescription *copy = pango_font_description_copy_static(d);
+	pango_font_description_unset_fields(copy, mask);
+
+	if(pango_font_description_get_set_fields(copy) == 0)
+		pango_layout_set_font_description(priv->layout, NULL);
+	else
+		pango_layout_set_font_description(priv->layout, copy);
+
+	pango_font_description_free(copy);
 }
 
 void cmk_label_set_font_family(CmkLabel *self, const char *family)
 {
-	cmk_return_if_fail(self, )
+	g_return_if_fail(CMK_IS_LABEL(self));
 
-	PangoFontDescription *desc = get_font_desc_copy(self);
-
-	if(family && strcmp(family, "mono") == 0)
+	if(family)
 	{
-		PRIV(self)->useDefaultFamily = 2; // yes (mono)
-		const PangoFontDescription *cdesc;
-		cmk_label_get_global_font_properties(NULL, NULL, &cdesc, NULL);
-		family = pango_font_description_get_family(cdesc);
-	}
-	else if(family)
-	{
-		PRIV(self)->useDefaultFamily = 0; // no
+		PangoFontDescription *desc = get_write_font_desc(self);
+		pango_font_description_set_family(desc, family);
+		pango_layout_set_font_description(PRIV(self)->layout, desc);
+		pango_font_description_free(desc);
 	}
 	else
 	{
-		PRIV(self)->useDefaultFamily = 1; // yes
-		const PangoFontDescription *cdesc;
-		cmk_label_get_global_font_properties(NULL, &cdesc, NULL, NULL);
-		family = pango_font_description_get_family(cdesc);
+		font_desc_unset(self, PANGO_FONT_MASK_FAMILY);
 	}
 
-	pango_font_description_set_family(desc, family);
-	pango_layout_set_font_description(PRIV(self)->layout, desc);
-	pango_font_description_free(desc);
+	cmk_widget_relayout(CMK_WIDGET(self));
 }
 
 const char * cmk_label_get_font_family(CmkLabel *self)
 {
-	cmk_return_if_fail(self, NULL)
-	const PangoFontDescription *desc = get_font_desc(self);
-	const char *family = pango_font_description_get_family(desc);
-	return family ? family : "";
+	g_return_val_if_fail(CMK_IS_LABEL(self), NULL);
+
+	const PangoFontDescription *desc = layout_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_FAMILY))
+		desc = context_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_FAMILY))
+		return NULL;
+
+	return pango_font_description_get_family(desc);
 }
 
 void cmk_label_set_font_size(CmkLabel *self, float size)
 {
-	cmk_return_if_fail(self, )
+	g_return_if_fail(CMK_IS_LABEL(self));
 
-	PangoFontDescription *desc = get_font_desc_copy(self);
-
-	if(size < 0)
+	if(size >= 0)
 	{
-		PRIV(self)->useDefaultSize = true;
-		const PangoFontDescription *cdesc;
-		int defaultSize;
-
-		if(PRIV(self)->useDefaultFamily == 2) // yes (mono)
-			cmk_label_get_global_font_properties(NULL, NULL, &cdesc, NULL);
-		else
-			cmk_label_get_global_font_properties(NULL, &cdesc, NULL, NULL);
-
-		defaultSize = pango_font_description_get_size(cdesc);
-		if(pango_font_description_get_size_is_absolute(cdesc))
-			pango_font_description_set_absolute_size(desc, defaultSize);
-		else
-			pango_font_description_set_size(desc, defaultSize);
+		PangoFontDescription *desc = get_write_font_desc(self);
+		pango_font_description_set_size(desc, size * PANGO_SCALE);
+		pango_layout_set_font_description(PRIV(self)->layout, desc);
+		pango_font_description_free(desc);
 	}
 	else
 	{
-		PRIV(self)->useDefaultSize = false;
-		pango_font_description_set_size(desc, size * PANGO_SCALE);
+		font_desc_unset(self, PANGO_FONT_MASK_SIZE);
 	}
 
-	pango_layout_set_font_description(PRIV(self)->layout, desc);
-	pango_font_description_free(desc);
+	cmk_widget_relayout(CMK_WIDGET(self));
 }
 
 float cmk_label_get_font_size(CmkLabel *self)
 {
-	cmk_return_if_fail(self, 0)
-	const PangoFontDescription *desc = get_font_desc(self);
+	g_return_val_if_fail(CMK_IS_LABEL(self), 0);
+
+	const PangoFontDescription *desc = layout_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_SIZE))
+		desc = context_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_SIZE))
+		return 0;
+
 	return (float)pango_font_description_get_size(desc) / PANGO_SCALE;
 }
 
 void cmk_label_set_single_line(CmkLabel *self, bool singleline)
 {
-	cmk_return_if_fail(self, )
+	g_return_if_fail(CMK_IS_LABEL(self));
 	if(PRIV(self)->singleline != singleline)
 	{
 		PRIV(self)->singleline = singleline;
-		cmk_widget_invalidate((CmkWidget *)self, NULL);
+		cmk_widget_relayout(CMK_WIDGET(self));
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_SINGLE_LINE]);
 	}
 }
 
 bool cmk_label_get_single_line(CmkLabel *self)
 {
-	cmk_return_if_fail(self, false)
+	g_return_val_if_fail(CMK_IS_LABEL(self), false);
 	return PRIV(self)->singleline;
 }
 
 void cmk_label_set_alignment(CmkLabel *self, PangoAlignment alignment)
 {
-	cmk_return_if_fail(self, )
-	pango_layout_set_alignment(PRIV(self)->layout, alignment);
+	g_return_if_fail(CMK_IS_LABEL(self));
+	if(pango_layout_get_alignment(PRIV(self)->layout) != alignment)
+	{
+		pango_layout_set_alignment(PRIV(self)->layout, alignment);
+		// Alignment can't change allocation size, so only invalidate
+		cmk_widget_invalidate(CMK_WIDGET(self), NULL);
+	}
 }
 
 void cmk_label_set_bold(CmkLabel *self, bool bold)
 {
-	cmk_return_if_fail(self, )
-	PangoFontDescription *desc = get_font_desc_copy(self);
+	g_return_if_fail(CMK_IS_LABEL(self));
+
+	PangoFontDescription *desc = get_write_font_desc(self);
 	pango_font_description_set_weight(desc, bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL);
 	pango_layout_set_font_description(PRIV(self)->layout, desc);
 	pango_font_description_free(desc);
+
+	cmk_widget_relayout(CMK_WIDGET(self));
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_BOLD]);
+}
+
+bool cmk_label_get_bold(CmkLabel *self)
+{
+	g_return_val_if_fail(CMK_IS_LABEL(self), false);
+
+	const PangoFontDescription *desc = layout_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_WEIGHT))
+		desc = context_font_desc(PRIV(self));
+	if(!desc_has_set(desc, PANGO_FONT_MASK_WEIGHT))
+		return 0;
+
+	return pango_font_description_get_weight(desc) >= PANGO_WEIGHT_BOLD;
 }
 
 PangoLayout * cmk_label_get_layout(CmkLabel *self)
@@ -390,72 +507,88 @@ PangoLayout * cmk_label_get_layout(CmkLabel *self)
 	return PRIV(self)->layout;
 }
 
-
-typedef struct
+static void set_pango_context(CmkLabel *self, PangoContext *context)
 {
-	CmkLabelGlobalPropertiesListenCallback callback;
-	void *userdata;
-} Listener;
+	CmkLabelPrivate *priv = PRIV(self);
 
-static unsigned int gResolution = 96;
-static PangoFontDescription *gDefaultFont = NULL;
-static PangoFontDescription *gDefaultMono = NULL;
-static bool gBaseRTL = false;
-static Listener *gListeners = NULL;
+	// If setting to default context and it's already default, ignore
+	if(!context && priv->context == priv->defaultContextRef)
+		return;
 
-void cmk_label_set_global_font_properties(unsigned int resolution, const PangoFontDescription *defaultFont, const PangoFontDescription *defaultMono, bool baseRTL)
-{
-	gResolution = resolution;
-	pango_font_description_free(gDefaultFont);
-	pango_font_description_free(gDefaultMono);
-	gDefaultFont = pango_font_description_copy(defaultFont);
-	gDefaultMono = pango_font_description_copy(defaultMono);
-	gBaseRTL = baseRTL;
+	// If the context hasn't changed at all, ignore
+	if(context
+	&& priv->contextIsSet
+	&& context == priv->context
+	&& pango_context_get_serial(context) == priv->contextSerial)
+		return;
 
-	if(gListeners)
+	// Update serial
+	if(context)
+		priv->contextSerial = pango_context_get_serial(context);
+
+	// If the context object changed, get the
+	// new one and recreate the layout
+	if(!priv->context || priv->context != context)
 	{
-		size_t size = array_size(gListeners);
-		for(size_t i = 0; i < size; ++i)
-			gListeners[i].callback(gListeners[i].userdata);
-	}
-}
+		priv->contextIsSet = (context != NULL);
 
-void cmk_label_get_global_font_properties(unsigned int *resolution, const PangoFontDescription **defaultFont, const PangoFontDescription **defaultMono, bool *baseRTL)
-{
-	if(resolution) *resolution = gResolution;
-	if(baseRTL) *baseRTL = gBaseRTL;
-	if(defaultFont)
-	{
-		if(!gDefaultFont)
-			gDefaultFont = pango_font_description_from_string("sans 11");
-		*defaultFont = gDefaultFont;
-	}
-	if(defaultMono)
-	{
-		if(!gDefaultMono)
-			gDefaultMono = pango_font_description_from_string("mono 11");
-		*defaultMono = gDefaultMono;
-	}
-}
+		// Acquire new context
+		PangoContext *newContext = context ? context : priv->defaultContextRef;
+		g_object_ref(newContext);
 
-void cmk_label_global_properties_listen(CmkLabelGlobalPropertiesListenCallback callback, void *userdata)
-{
-	if(!gListeners)
-		gListeners = array_new(sizeof(Listener), NULL);
+		// Make layout with the new context
+		PangoLayout *newLayout;
+		if(priv->layout)
+			newLayout = cmk_pango_layout_copy_new_context(priv->layout, newContext);
+		else
+			newLayout = pango_layout_new(newContext);
 
-	if(callback)
-	{
-		Listener l = {
-			.callback = callback,
-			.userdata = userdata
-		};
-		gListeners = array_append(gListeners, &l);
+		// Replace layout and context
+		g_clear_object(&priv->layout);
+		g_clear_object(&priv->context);
+		priv->layout = newLayout;
+		priv->context = newContext;
 	}
 	else
 	{
-		size_t size = array_size(gListeners);
-		for(size_t i = size + 1; i != 0; --i)
-			if(gListeners[i - 1].userdata == userdata)
-				array_remove(gListeners, i - 1, false);
+		// Otherwise just update the layout
+		pango_layout_context_changed(priv->layout);
 	}
+
+	// Relayout
+	cmk_widget_relayout(CMK_WIDGET(self));
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PANGO_CONTEXT]);
+}
+
+// Based on the pango_layout_copy() source code.
+// This really needs to be part of the Pango API.
+static PangoLayout * cmk_pango_layout_copy_new_context(PangoLayout *original, PangoContext *context)
+{
+	PangoLayout *new = pango_layout_new(context);
+
+	const char *text = pango_layout_get_text(original);
+	if(text)
+		pango_layout_set_text(new, text, -1);
+
+	PangoTabArray *tabs = pango_layout_get_tabs(original); // makes a copy
+	if(tabs)
+	{
+		pango_layout_set_tabs(new, tabs);
+		pango_tab_array_free(tabs);
+	}
+
+	pango_layout_set_font_description(new, pango_layout_get_font_description(original));
+	pango_layout_set_attributes(new, pango_layout_get_attributes(original));
+	pango_layout_set_width(new, pango_layout_get_width(original));
+	pango_layout_set_height(new, pango_layout_get_height(original));
+	pango_layout_set_indent(new, pango_layout_get_indent(original));
+	pango_layout_set_spacing(new, pango_layout_get_spacing(original));
+	pango_layout_set_justify(new, pango_layout_get_justify(original));
+	pango_layout_set_alignment(new, pango_layout_get_alignment(original));
+	pango_layout_set_single_paragraph_mode(new, pango_layout_get_single_paragraph_mode(original));
+	pango_layout_set_auto_dir(new, pango_layout_get_auto_dir(original));
+	pango_layout_set_wrap(new, pango_layout_get_wrap(original));
+	pango_layout_set_ellipsize(new, pango_layout_get_ellipsize(original));
+
+	return new;
 }

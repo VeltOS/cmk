@@ -11,6 +11,7 @@
 #include <cogl/cogl.h>
 #include <cairo/cairo.h>
 #include <math.h>
+#include <glib-object.h>
 
 struct _CmkClutterWidget
 {
@@ -27,6 +28,7 @@ struct _CmkClutterWidget
 	cairo_region_t *dirty;
 
 	CmkWidget *widget;
+	bool hasPangoContext;
 };
 
 static void cmk_clutter_widget_init(CmkClutterWidget *self);
@@ -34,14 +36,14 @@ static void on_dispose(GObject *self_);
 static void on_allocate(ClutterActor *self_, const ClutterActorBox *box, ClutterAllocationFlags flags);
 static gboolean on_event(ClutterActor *self_, ClutterEvent *event);
 static void on_reactive_changed(CmkClutterWidget *self, GParamSpec *spec, gpointer userdata);
-static void on_text_direction_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata);
+static void update_pango_context(CmkClutterWidget *self);
 static void on_paint_node(ClutterActor *self_, ClutterPaintNode *root);
 static gboolean get_paint_volume(ClutterActor *self_, ClutterPaintVolume *volume);
 static void get_preferred_width(ClutterActor *self_, gfloat forHeight, gfloat *min, gfloat *nat);
 static void get_preferred_height(ClutterActor *self_, float forWidth, gfloat *min, gfloat *nat);
 static void on_widget_request_invalidate(UNUSED CmkWidget *widget, const cairo_region_t *region, CmkClutterWidget *self);
 static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *signaldata, CmkClutterWidget *self);
-static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkClutterWidget *self);
+static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED GParamSpec *spec, UNUSED CmkClutterWidget *self);
 static void * cmk_clutter_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
 
@@ -50,7 +52,7 @@ G_DEFINE_TYPE(CmkClutterWidget, cmk_clutter_widget, CLUTTER_TYPE_ACTOR);
 
 ClutterActor * cmk_widget_to_clutter(CmkWidget *widget)
 {
-	g_return_val_if_fail(widget, NULL);
+	g_return_val_if_fail(CMK_IS_WIDGET(widget), NULL);
 
 	// Return existing wrapper object if available
 	CmkClutterWidget *wrapper = cmk_widget_get_wrapper(widget);
@@ -65,13 +67,17 @@ ClutterActor * cmk_widget_to_clutter(CmkWidget *widget)
 	g_return_val_if_fail(CMK_IS_CLUTTER_WIDGET(self), NULL);
 
 	// Connect wrapper and widget
-	self->widget = cmk_widget_ref(widget);
+	self->widget = g_object_ref_sink(widget);
 	cmk_widget_set_wrapper(widget, self);
-	cmk_widget_listen(widget, "invalidate", CMK_CALLBACK(on_widget_request_invalidate), self);
-	cmk_widget_listen(widget, "relayout", CMK_CALLBACK(on_widget_request_relayout), self);
-	cmk_widget_listen(widget, "event-mask", CMK_CALLBACK(on_widget_event_mask_changed), self);
+	g_signal_connect(widget, "invalidate", G_CALLBACK(on_widget_request_invalidate), self);
+	g_signal_connect(widget, "relayout", G_CALLBACK(on_widget_request_relayout), self);
+	g_signal_connect(widget, "notify::event-mask", G_CALLBACK(on_widget_event_mask_changed), self);
 	g_signal_connect(self, "notify::reactive", G_CALLBACK(on_reactive_changed), NULL);
-	g_signal_connect(self, "notify::text-direction", G_CALLBACK(on_text_direction_changed), NULL);
+
+	self->hasPangoContext = (g_object_class_find_property(G_OBJECT_GET_CLASS(widget), "pango-context") != NULL);
+
+	g_signal_connect_swapped(clutter_get_default_backend(), "settings-changed", G_CALLBACK(update_pango_context), self);
+	g_signal_connect_swapped(self, "notify::text-direction", G_CALLBACK(update_pango_context), self);
 
 	cmk_timeline_set_handler_callback(cmk_clutter_timeline_callback, false);
 
@@ -83,13 +89,13 @@ static void cmk_clutter_widget_class_init(CmkClutterWidgetClass *class)
 	GObjectClass *base = G_OBJECT_CLASS(class);
 	base->dispose = on_dispose;
 
-	ClutterActorClass *caclass = CLUTTER_ACTOR_CLASS(class);
-	caclass->allocate = on_allocate;
-	caclass->event = on_event;
-	caclass->paint_node = on_paint_node;
-	caclass->get_paint_volume = get_paint_volume;
-	caclass->get_preferred_width = get_preferred_width;
-	caclass->get_preferred_height = get_preferred_height;
+	ClutterActorClass *actorClass = CLUTTER_ACTOR_CLASS(class);
+	actorClass->allocate = on_allocate;
+	actorClass->event = on_event;
+	actorClass->paint_node = on_paint_node;
+	actorClass->get_paint_volume = get_paint_volume;
+	actorClass->get_preferred_width = get_preferred_width;
+	actorClass->get_preferred_height = get_preferred_height;
 }
 
 static void cmk_clutter_widget_init(CmkClutterWidget *self)
@@ -105,10 +111,11 @@ static void on_dispose(GObject *self_)
 	CmkClutterWidget *self = CMK_CLUTTER_WIDGET(self_);
 	if(self->widget)
 	{
-		cmk_widget_unlisten_by_userdata(self->widget, self);
+		g_signal_handlers_disconnect_by_data(self->widget, self);
 		cmk_widget_set_wrapper(self->widget, NULL);
 	}
-	g_clear_pointer(&self->widget, cmk_widget_unref);
+	g_signal_handlers_disconnect_by_data(clutter_get_default_backend(), self);
+	g_clear_object(&self->widget);
 	G_OBJECT_CLASS(cmk_clutter_widget_parent_class)->dispose(self_);
 }
 
@@ -252,9 +259,15 @@ static void on_reactive_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec,
 	cmk_widget_set_disabled(self->widget, !clutter_actor_get_reactive(CLUTTER_ACTOR(self)));
 }
 
-static void on_text_direction_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
+static void update_pango_context(CmkClutterWidget *self)
 {
-	cmk_widget_set_text_direction(self->widget, clutter_actor_get_text_direction(CLUTTER_ACTOR(self)) == CLUTTER_TEXT_DIRECTION_RTL);
+	CmkWidget *widget = self->widget;
+	if(self->hasPangoContext)
+	{
+		g_object_set(widget,
+			"pango-context", clutter_actor_get_pango_context(CLUTTER_ACTOR(self)),
+			NULL);
+	}
 }
 
 // http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
@@ -473,7 +486,7 @@ static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *si
 	clutter_actor_queue_relayout(CLUTTER_ACTOR(self));
 }
 
-static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkClutterWidget *self)
+static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED GParamSpec *spec, CmkClutterWidget *self)
 {
 	gboolean reactive = (cmk_widget_get_event_mask(widget) != 0);
 	clutter_actor_set_reactive(CLUTTER_ACTOR(self), reactive);

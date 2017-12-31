@@ -6,32 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "cmk-widget.h"
-#include "array.h"
 
-#define PRIV(self) ((CmkWidgetPrivate *)self->priv)
-#define CLASS(self) ((CmkWidgetClass *)self->class)
+#define CMK_WIDGET_EVENT_MASK 0
+//CMK_EVENT_BUTTON | CMK_EVENT_CROSSING | CMK_EVENT_KEY | CMK_EVENT_FOCUS
 
-CmkWidgetClass *cmk_widget_class = NULL;
-
-static uint32_t listenIdCount = 1;
-
-typedef struct
+typedef struct _CmkWidgetPrivate CmkWidgetPrivate;
+struct _CmkWidgetPrivate
 {
-	uint32_t id;
-	char *signalName;
-	CmkCallback callback;
-	void *userdata;
-} Listener;
-
-typedef struct
-{
-	unsigned int ref;
 	void *wrapper;
-	Listener *listeners;
 
 	bool disabled;
-	bool rtl;
-	unsigned int eventMask;
 	float setWidth, setHeight;
 
 	// Preferred width / height cache
@@ -42,81 +26,178 @@ typedef struct
 	// Draw rect cache
 	CmkRect drawRect;
 	bool drawRectValid;
-} CmkWidgetPrivate;
+};
 
-static void on_destroy(CmkWidget *self);
+enum
+{
+	PROP_DISABLED = 1,
+	PROP_EVENT_MASK,
+	PROP_WRAPPER,
+	PROP_LAST
+};
+
+enum
+{
+	SIGNAL_INVALIDATE = 1,
+	SIGNAL_RELAYOUT,
+	SIGNAL_LAST
+};
+
+static GParamSpec *properties[PROP_LAST];
+static guint signals[SIGNAL_LAST];
+
+G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, G_TYPE_INITIALLY_UNOWNED);
+#define PRIV(widget) ((CmkWidgetPrivate *)cmk_widget_get_instance_private(widget))
+
+
+static void on_dispose(GObject *self_);
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
 static void on_draw(CmkWidget *self, cairo_t *cr);
 static bool on_event(CmkWidget *self, const CmkEvent *event);
 static void on_disable(CmkWidget *self, bool disabled);
 static void get_preferred_width(CmkWidget *self, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self, CmkRect *rect);
-static void text_direction_changed(CmkWidget *self, bool rtl);
-static void free_listener(void *listener);
 
 
 CmkWidget * cmk_widget_new(void)
 {
-	CmkWidget *self = calloc(sizeof(CmkWidget), 1);
-	cmk_widget_init(self);
-	return self;
+	return CMK_WIDGET(g_object_new(CMK_TYPE_WIDGET, NULL));
 }
 
-void cmk_widget_init(CmkWidget *self)
+static void cmk_widget_class_init(CmkWidgetClass *class)
 {
-	if(cmk_widget_class == NULL)
-	{
-		cmk_widget_class = calloc(sizeof(CmkWidgetClass), 1);
-		cmk_widget_class->destroy = on_destroy;
-		cmk_widget_class->draw = on_draw;
-		cmk_widget_class->disable = on_disable;
-		cmk_widget_class->event = on_event;
-		cmk_widget_class->get_preferred_width = get_preferred_width;
-		cmk_widget_class->get_preferred_height = get_preferred_height;
-		cmk_widget_class->get_draw_rect = get_draw_rect;
-		cmk_widget_class->text_direction_changed = text_direction_changed;
-	}
+	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->dispose = on_dispose;
+	base->get_property = get_property;
+	base->set_property = set_property;
 
-	self->class = cmk_widget_class;
-	self->priv = calloc(sizeof(CmkWidgetPrivate), 1);
-	PRIV(self)->ref = 1;
-	PRIV(self)->setWidth = PRIV(self)->setHeight = -1;
-	PRIV(self)->listeners = array_new(sizeof(Listener), free_listener);
+	class->draw = on_draw;
+	class->disable = on_disable;
+	class->event = on_event;
+	class->get_preferred_width = get_preferred_width;
+	class->get_preferred_height = get_preferred_height;
+	class->get_draw_rect = get_draw_rect;
 
-	// Most widgets probably want these events by default.
-	PRIV(self)->eventMask = CMK_EVENT_BUTTON | CMK_EVENT_CROSSING | CMK_EVENT_KEY | CMK_EVENT_FOCUS;
+	/**
+	 * CmkWidget:disabled:
+	 *
+	 * Makes the widget gray and inactive. Usually set
+	 * automatically by the widget's wrapper based on the
+	 * wrapper class's disabled property, and so probably
+	 * shouldn't be set directly.
+	 */
+	properties[PROP_DISABLED] =
+		g_param_spec_boolean("disabled", "disabled", "disabled",
+		                     false,
+		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkWidget:event-mask:
+	 *
+	 * The #CmkEvent types that this widget will respond to.
+	 * The widget's wrapper may optimize by not even sending
+	 * these events.
+	 */
+	properties[PROP_EVENT_MASK] =
+		g_param_spec_uint("event-mask", "event-mask", "event-mask",
+		                  0, CMK_EVENT_MASK_ALL, 0,
+		                  G_PARAM_READABLE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkWidget:wrapper:
+	 *
+	 * A toolkit-specific wrapper object.
+	 */
+	properties[PROP_WRAPPER] =
+		g_param_spec_pointer("wrapper", "wrapper", "wrapper",
+		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
+
+	/**
+	 * CmkWidget::invalidate:
+	 * @widget: The widget that was invalidated.
+	 * @region: a const cairo_region_t * specifying the region
+	 *          invalidated, or NULL to requests the entire
+	 *          area of the widget.
+	 *
+	 * A redraw of the widget should be performed.
+	 */
+	signals[SIGNAL_INVALIDATE] =
+		g_signal_new("invalidate",
+		             G_TYPE_FROM_CLASS(class),
+		             G_SIGNAL_RUN_FIRST,
+		             0, NULL, NULL, NULL,
+		             G_TYPE_NONE,
+		             1, G_TYPE_POINTER);
+
+	/**
+	 * CmkWidget::relayout:
+	 * @widget: The widget that requested relayout.
+	 *
+	 * The widget's size request has changed, and a relayout
+	 * should be performed.
+	 */
+	signals[SIGNAL_RELAYOUT] =
+		g_signal_new("relayout",
+		             G_TYPE_FROM_CLASS(class),
+		             G_SIGNAL_RUN_FIRST,
+		             0, NULL, NULL, NULL,
+		             G_TYPE_NONE,
+		             0);
 }
 
-CmkWidget * cmk_widget_ref(CmkWidget *self)
-{
-	cmk_return_if_fail(self, NULL)
 
-	++PRIV(self)->ref;
-	return self;
+static void cmk_widget_init(CmkWidget *self)
+{
+	CmkWidgetPrivate *priv = PRIV(self);
+	priv->setWidth = priv->setHeight = -1;
 }
 
-void cmk_widget_unref(CmkWidget *self)
+static void on_dispose(GObject *self_)
 {
-	cmk_return_if_fail(self, )
+	G_OBJECT_CLASS(cmk_widget_parent_class)->dispose(self_);
+}
+
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec)
+{
+	CmkWidget *self = CMK_WIDGET(self_);
 	
-	if(PRIV(self)->ref > 0)
-		--PRIV(self)->ref;
-
-	if(PRIV(self)->ref == 0)
+	switch(id)
 	{
-		// Destroy object
-		if(CLASS(self)->destroy)
-			CLASS(self)->destroy(self);
-		else
-			on_destroy(self);
+	case PROP_DISABLED:
+		g_value_set_boolean(value, PRIV(self)->disabled);
+		break;
+	case PROP_EVENT_MASK:
+		g_value_set_uint(value, CMK_WIDGET_EVENT_MASK);
+		break;
+	case PROP_WRAPPER:
+		g_value_set_pointer(value, PRIV(self)->wrapper);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
 	}
 }
 
-static void on_destroy(CmkWidget *self)
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec)
 {
-	array_free(PRIV(self)->listeners);
-	free(self->priv);
-	free(self);
+	CmkWidget *self = CMK_WIDGET(self_);
+	
+	switch(id)
+	{
+	case PROP_DISABLED:
+		cmk_widget_set_disabled(self, g_value_get_boolean(value));
+		break;
+	case PROP_WRAPPER:
+		cmk_widget_set_wrapper(self, g_value_get_pointer(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
+	}
 }
 
 static void on_draw(UNUSED CmkWidget *self, UNUSED cairo_t *cr)
@@ -152,135 +233,68 @@ static void get_draw_rect(CmkWidget *self, CmkRect *rect)
 	rect->height = PRIV(self)->setHeight;
 }
 
-static void text_direction_changed(CmkWidget *self, bool rtl)
-{
-	cmk_widget_invalidate(self, NULL);
-}
-
 void cmk_widget_set_wrapper(CmkWidget *self, void *wrapper)
 {
-	cmk_return_if_fail(self, )
-	PRIV(self)->wrapper = wrapper;
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	if(PRIV(self)->wrapper != wrapper)
+	{
+		PRIV(self)->wrapper = wrapper;
+		g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_WRAPPER]);
+	}
 }
 
 void * cmk_widget_get_wrapper(CmkWidget *self)
 {
-	cmk_return_if_fail(self, NULL)
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
 	return PRIV(self)->wrapper;
-}
-
-uint32_t cmk_widget_listen(CmkWidget *self, const char *signalName, CmkCallback callback, void *userdata)
-{
-	cmk_return_if_fail(self, 0)
-	cmk_return_if_fail(signalName, 0)
-	cmk_return_if_fail(callback, 0)
-
-	Listener l = {
-		.id = (listenIdCount ++),
-		.signalName = strdup(signalName),
-		.callback = callback,
-		.userdata = userdata
-	};
-
-	PRIV(self)->listeners = array_append(PRIV(self)->listeners, &l);
-	return l.id;
-}
-
-void cmk_widget_unlisten(CmkWidget *self, uint32_t id)
-{
-	cmk_return_if_fail(self, )
-
-	if(id == 0)
-		return;
-
-	size_t size = array_size(PRIV(self)->listeners);
-	for(size_t i = 0; i < size; ++i)
-	{
-		if(PRIV(self)->listeners[i].id == id)
-		{
-			array_remove(PRIV(self)->listeners, i, true);
-			break;
-		}
-	}
-}
-
-void cmk_widget_unlisten_by_userdata(CmkWidget *self, const void *userdata)
-{
-	cmk_return_if_fail(self, )
-
-	size_t size = array_size(PRIV(self)->listeners);
-	for(size_t i = size + 1; i != 0; --i)
-		if(PRIV(self)->listeners[i - 1].userdata == userdata)
-			array_remove(PRIV(self)->listeners, i - 1, true);
-}
-
-void cmk_widget_emit(CmkWidget *self, const char *signalName, const void *data)
-{
-	cmk_return_if_fail(self, )
-
-	size_t size = array_size(PRIV(self)->listeners);
-	for(size_t i = 0; i < size; ++i)
-	{
-		Listener *l = &(PRIV(self)->listeners[i]);
-		if(l->callback && strcmp(signalName, l->signalName) == 0)
-			l->callback(self, data, l->userdata);
-	}
 }
 
 void cmk_widget_invalidate(CmkWidget *self, const cairo_region_t *region)
 {
-	cmk_return_if_fail(self, );
-	cmk_widget_emit(self, "invalidate", region);
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	g_signal_emit(self, signals[SIGNAL_INVALIDATE], 0, region);
 }
 
 void cmk_widget_relayout(CmkWidget *self)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	PRIV(self)->prefWvalid = PRIV(self)->prefHvalid = false;
 	PRIV(self)->drawRectValid = false;
 
-	cmk_widget_emit(self, "relayout", NULL);
+	g_signal_emit(self, signals[SIGNAL_RELAYOUT], 0);
 }
 
 void cmk_widget_draw(CmkWidget *self, cairo_t *cr)
 {
-	cmk_return_if_fail(self, );
-	cmk_return_if_fail(cr != NULL, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	g_return_if_fail(cr != NULL);
 
-	if(CLASS(self)->draw)
-		CLASS(self)->draw(self, cr);
+	if(CMK_WIDGET_GET_CLASS(self)->draw)
+		CMK_WIDGET_GET_CLASS(self)->draw(self, cr);
 }
 
 bool cmk_widget_event(CmkWidget *self, const CmkEvent *event)
 {
-	cmk_return_if_fail(self, false);
-	cmk_return_if_fail(event != NULL, false);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), false);
+	g_return_val_if_fail(event != NULL, false);
 
-	if((PRIV(self)->eventMask & event->type) == 0)
-		return false;
-
-	if(CLASS(self)->event)
-		return CLASS(self)->event(self, event);
+	if(CMK_WIDGET_GET_CLASS(self)->event)
+		CMK_WIDGET_GET_CLASS(self)->event(self, event);
 	return false;
-}
-
-void cmk_widget_set_event_mask(CmkWidget *self, unsigned int mask)
-{
-	cmk_return_if_fail(self, );
-	PRIV(self)->eventMask = mask;
-	cmk_widget_emit(self, "event-mask", NULL);
 }
 
 unsigned int cmk_widget_get_event_mask(CmkWidget *self)
 {
-	cmk_return_if_fail(self, 0);
-	return PRIV(self)->eventMask;
+	g_return_val_if_fail(CMK_IS_WIDGET(self), 0);
+	unsigned int mask;
+	g_object_get(self, "event-mask", &mask, NULL);
+	return mask;
 }
 
 void cmk_widget_get_preferred_width(CmkWidget *self, float forHeight, float *min, float *nat)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->prefWvalid && PRIV(self)->prefWforH == forHeight)
 	{
@@ -294,8 +308,8 @@ void cmk_widget_get_preferred_width(CmkWidget *self, float forHeight, float *min
 	if(min == NULL) min = &m;
 	if(nat == NULL) nat = &n;
 
-	if(CLASS(self)->get_preferred_width)
-		CLASS(self)->get_preferred_width(self, forHeight, min, nat);
+	if(CMK_WIDGET_GET_CLASS(self)->get_preferred_width)
+		CMK_WIDGET_GET_CLASS(self)->get_preferred_width(self, forHeight, min, nat);
 
 	PRIV(self)->prefWforH = forHeight;
 	PRIV(self)->prefWmin = *min;
@@ -305,7 +319,7 @@ void cmk_widget_get_preferred_width(CmkWidget *self, float forHeight, float *min
 
 void cmk_widget_get_preferred_height(CmkWidget *self, float forWidth, float *min, float *nat)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->prefHvalid && PRIV(self)->prefHforW == forWidth)
 	{
@@ -319,8 +333,8 @@ void cmk_widget_get_preferred_height(CmkWidget *self, float forWidth, float *min
 	if(min == NULL) min = &m;
 	if(nat == NULL) nat = &n;
 
-	if(CLASS(self)->get_preferred_height)
-		CLASS(self)->get_preferred_height(self, forWidth, min, nat);
+	if(CMK_WIDGET_GET_CLASS(self)->get_preferred_height)
+		CMK_WIDGET_GET_CLASS(self)->get_preferred_height(self, forWidth, min, nat);
 
 	PRIV(self)->prefHforW = forWidth;
 	PRIV(self)->prefHmin = *min;
@@ -330,14 +344,14 @@ void cmk_widget_get_preferred_height(CmkWidget *self, float forWidth, float *min
 
 void cmk_widget_get_draw_rect(CmkWidget *self, CmkRect *rect)
 {
-	cmk_return_if_fail(rect, );
+	g_return_if_fail(rect);
 
 	rect->x = 0;
 	rect->y = 0;
 	rect->width = 0;
 	rect->height = 0;
 
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->drawRectValid)
 	{
@@ -345,15 +359,15 @@ void cmk_widget_get_draw_rect(CmkWidget *self, CmkRect *rect)
 		return;
 	}
 
-	if(CLASS(self)->get_draw_rect)
-		CLASS(self)->get_draw_rect(self, rect);
-	
+	if(CMK_WIDGET_GET_CLASS(self)->get_draw_rect)
+		CMK_WIDGET_GET_CLASS(self)->get_draw_rect(self, rect);
+
 	PRIV(self)->drawRect = *rect;
 }
 
 void cmk_widget_set_size(CmkWidget *self, float width, float height)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->setWidth != width || PRIV(self)->setHeight != height)
 		PRIV(self)->drawRectValid = false;
@@ -366,7 +380,7 @@ void cmk_widget_get_size(CmkWidget *self, float *width, float *height)
 {
 	*width = *height = 0;
 
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->setWidth < 0)
 		cmk_widget_get_preferred_width(self, -1, NULL, width);
@@ -381,42 +395,19 @@ void cmk_widget_get_size(CmkWidget *self, float *width, float *height)
 
 void cmk_widget_set_disabled(CmkWidget *self, bool disabled)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(CMK_IS_WIDGET(self));
 
 	if(PRIV(self)->disabled != disabled)
 	{
 		PRIV(self)->disabled = disabled;
 
-		if(CLASS(self)->disable)
-			CLASS(self)->disable(self, disabled);
+		if(CMK_WIDGET_GET_CLASS(self)->disable)
+			CMK_WIDGET_GET_CLASS(self)->disable(self, disabled);
 	}
 }
 
 bool cmk_widget_get_disabled(CmkWidget *self)
 {
-	cmk_return_if_fail(self, false);
+	g_return_val_if_fail(CMK_IS_WIDGET(self), false);
 	return PRIV(self)->disabled;
-}
-
-void cmk_widget_set_text_direction(CmkWidget *self, bool rtl)
-{
-	cmk_return_if_fail(self, );
-	if(PRIV(self)->rtl != rtl)
-	{
-		PRIV(self)->rtl = rtl;
-		if(CLASS(self)->text_direction_changed)
-			CLASS(self)->text_direction_changed(self, rtl);
-	}
-}
-
-bool cmk_widget_get_text_direction(CmkWidget *self)
-{
-	cmk_return_if_fail(self, false);
-	return PRIV(self)->rtl;
-}
-
-static void free_listener(void *listener)
-{
-	cmk_return_if_fail(listener, );
-	free(((Listener *)listener)->signalName);
 }

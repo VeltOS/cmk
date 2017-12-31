@@ -3,12 +3,6 @@
  * Apache License 2.0 <www.apache.org/licenses/LICENSE-2.0>.
  */
 
-#ifndef __CMK_LABEL_H__
-#define __CMK_LABEL_H__
-
-#include "cmk-widget.h"
-#include <pango/pango.h>
-
 /**
  * SECTION:cmk-label
  * @TITLE: CmkLabel
@@ -16,50 +10,37 @@
  * It displays text.
  */
 
-typedef struct
-{
-	/*< public >*/
-	CmkWidget parent;
+#ifndef __CMK_LABEL_H__
+#define __CMK_LABEL_H__
 
+#include "cmk-widget.h"
+#include <pango/pango.h>
+
+#define CMK_TYPE_LABEL cmk_label_get_type()
+G_DECLARE_DERIVABLE_TYPE(CmkLabel, cmk_label, CMK, LABEL, GInitiallyUnowned);
+typedef struct _CmkLabelClass CmkLabelClass;
+
+struct _CmkLabelClass
+{
 	/*< private >*/
-	void *priv;
-} CmkLabel;
-
-typedef struct
-{
-	/*< public >*/
 	CmkWidgetClass parentClass;
-} CmkLabelClass;
-
-extern CmkLabelClass *cmk_label_class;
+};
 
 /**
  * cmk_label_new:
+ * @text: The text of the label, or NULL.
  *
  * Create a new CmkLabel.
  */
-CmkLabel * cmk_label_new(void);
+CmkLabel * cmk_label_new(const char *text);
 
 /**
- * cmk_label_new_with_text:
- *
- * Create a new CmkLabel with the given text.
- */
-CmkLabel * cmk_label_new_with_text(const char *text);
-
-/**
- * cmk_label_new_full:
+ * cmk_label_new_bold:
+ * @text: The text of the label, or NULL.
  *
  * Create a new, bold, CmkLabel.
  */
 CmkLabel * cmk_label_new_bold(const char *text);
-
-/**
- * cmk_label_init:
- *
- * Initializes a CmkLabel. For use when subclassing.
- */
-void cmk_label_init(CmkLabel *label);
 
 /**
  * cmk_label_set_text:
@@ -86,16 +67,14 @@ const char * cmk_label_get_text(CmkLabel *label);
  * cmk_label_set_font_family:
  *
  * Sets the font family to use, or NULL for system default.
- *
- * The special value "mono" will correct to the default
- * system mono font.
  */
 void cmk_label_set_font_family(CmkLabel *label, const char *family);
 
 /**
  * cmk_label_get_font_family:
  *
- * Gets the current font family name.
+ * Gets the current font family name. This may return NULL
+ * if family is set.
  */
 const char * cmk_label_get_font_family(CmkLabel *label);
 
@@ -114,7 +93,7 @@ void cmk_label_set_font_size(CmkLabel *label, float size);
  * per second. So if the size was 12pt, taking it to 16pt
  * in 400ms would be a speed of (16 - 12) / 0.4 = 10.
  */
-void cmk_label_animate_font_size(CmkLabel *label, float size, float speed);
+//void cmk_label_animate_font_size(CmkLabel *label, float size, float speed);
 
 /**
  * cmk_label_get_font_size:
@@ -162,12 +141,24 @@ void cmk_label_set_alignment(CmkLabel *label, PangoAlignment alignment);
 void cmk_label_set_bold(CmkLabel *label, bool bold);
 
 /**
+ * cmk_label_get_bold:
+ *
+ * Returns true if the font weight is >= PANGO_WEIGHT_BOLD.
+ */
+bool cmk_label_get_bold(CmkLabel *self);
+
+/**
  * cmk_label_get_layout:
  *
  * If more detailed text handling is necessary, the #PangoLayout
  * may be acquired and edited. After making changes, call
- * cmk_widget_invalidate() on the label to apply. Most other
+ * cmk_widget_relayout() on the label to apply. Most other
  * #CmkLabel methods simply modify or query this layout object.
+ *
+ * The label's #PangoLayout may change, so don't ever keep a
+ * reference to the return value of this function. If the layout
+ * object changes, any values set (including values set to the
+ * layout's #PangoFontDescription) are retained.
  *
  * pango_layout_set_width() and pango_layout_set_height() are
  * are called each draw cycle, so don't bother changing them.
@@ -175,38 +166,5 @@ void cmk_label_set_bold(CmkLabel *label, bool bold);
  * Return value: (transfer none): A #PangoLayout which can be edited.
  */
 PangoLayout * cmk_label_get_layout(CmkLabel *label);
-
-/**
- * cmk_label_set_global_font_properties:
- *
- * Sets the global, default font properties. These should
- * be obtained from the system by the #CmkWidget wrapper.
- *
- * @resolution: Font dpi. Starts at 96.
- * @defaultFont: System default font. Starts at "sans 11".
- * @defaultMono: System default mono font. Starts at "mono 11".
- * @baseRTL: To use right-to-left as the default text direction.
- *      Starts at false.
- */
-void cmk_label_set_global_font_properties(unsigned int resolution, const PangoFontDescription *defaultFont, const PangoFontDescription *defaultMono, bool baseRTL);
-
-/**
- * cmk_label_get_global_font_properties:
- *
- * Get properties set with cmk_label_set_global_font_properties().
- * defaultFont and defaultMono will always be non-NULL; if they
- * were set to NULL, the original defaults are returned instead.
- */
-void cmk_label_get_global_font_properties(unsigned int *resolution, const PangoFontDescription **defaultFont, const PangoFontDescription **defaultMono, bool *baseRTL);
-
-typedef void (* CmkLabelGlobalPropertiesListenCallback) (void *userdata);
-
-/**
- * cmk_label_global_properties_listen:
- *
- * Listen to calls to cmk_label_set_global_font_properties().
- * Pass NULL for callback to unlisten for the given userdata.
- */
-void cmk_label_global_properties_listen(CmkLabelGlobalPropertiesListenCallback callback, void *userdata);
 
 #endif

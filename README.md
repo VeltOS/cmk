@@ -33,6 +33,7 @@ Depends on:
 
 	- cmake (build only)
 	- cairo
+	- glib
 	- pango
 	- gtk3 (optional; for building with GTK+ support)
 	- clutter-1.0 (optional; for building with Clutter support)

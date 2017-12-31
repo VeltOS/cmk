@@ -16,60 +16,34 @@
  * (a widget implementation can create another widget
  * internally for rendering); child widgets should be
  * handled by the wrapper toolkit: Gtk, Clutter, Cocoa, etc.
- *
- * A minimal version of a GObject is created, to avoid
- * unnecessary glib dependency on all platforms. Widgets
- * receive user events through cmk_widget_event() and
- * respond with signals through cmk_widget_listen().
- * See any existing CmkWidget subclass for reference on
- * how to subclass CmkWidget; it's very similar to GObject.
- *
- * CmkWidgets can emit
- *   "invalidate": A redraw of the widget should be performed.
- *      signaldata is a (const cairo_region_t *) specifying
- *      the region invalidated, or NULL to request the entire
- *      area of the widget.
- *   "relayout": The widget's size request has changed.
- *      signaldata is NULL. 
- *   "event-mask": The widget's event mask changed.
- *      signaldata is NULL.
  */
 
 #ifndef __CMK_WIDGET_H__
 #define __CMK_WIDGET_H__
 
 #include <stdbool.h>
-#include <stdio.h>
 #include <cairo/cairo.h>
+#include <glib-object.h>
 #include "cmk-event.h"
 
-#define cmk_return_if_fail(expr, ret) if(!(expr)) { printf("Warning: Assertion '%s' failed in function '%s'.\n", #expr, __FUNCTION__); return ret; }
+G_BEGIN_DECLS
 
 typedef struct
 {
 	float x, y, width, height;
 } CmkRect;
 
-typedef struct
-{
-	/*< public >*/
-	void *class;
-
-	/*< private >*/
-	void *priv;
-} CmkWidget;
+#define CMK_TYPE_WIDGET cmk_widget_get_type()
+G_DECLARE_DERIVABLE_TYPE(CmkWidget, cmk_widget, CMK, WIDGET, GInitiallyUnowned);
+typedef struct _CmkWidgetClass CmkWidgetClass;
 
 /**
  * CmkWidgetClass:
- * @destroy: Called on widget destruction. You should destroy any
- *           class-private data, and then chain up.
  * @draw: Draw handler. Chain up to this before doing your own
  *        drawing to get standard widget effects.
  * @event: User input event handler. Return TRUE if the widget
  *         captured and responded to the event, FALSE to propagate
  *         the event.
- * @event_mask: Return a mask of CmkEventTypes that the widget
- *         should be able to recieve. For optimization purposes.
  * @disable: Disabled event handler.
  * @get_preferred_width: Preferred width handler.
  * @get_preferred_height: Preferred height handler.
@@ -77,23 +51,19 @@ typedef struct
  *         drawing. This may be bigger or smaller than the widget's
  *         size. This is only checked on relayout.
  */
-typedef struct
+struct _CmkWidgetClass
 {
+	/*< private >*/
+	GObjectClass parentClass;
+
 	/*< public >*/
-	void (*destroy) (CmkWidget *self);
 	void (*draw) (CmkWidget *self, cairo_t *cr);
 	void (*disable) (CmkWidget *self, bool disabled);
 	bool (*event) (CmkWidget *self, const CmkEvent *event);
 	void (*get_preferred_width) (CmkWidget *self, float forHeight, float *min, float *nat);
 	void (*get_preferred_height) (CmkWidget *self, float forWidth, float *min, float *nat);
 	void (*get_draw_rect) (CmkWidget *self, CmkRect *rect);
-	void (*text_direction_changed) (CmkWidget *self, bool rtl);
-} CmkWidgetClass;
-
-extern CmkWidgetClass *cmk_widget_class;
-
-typedef void (*CmkCallback) (CmkWidget *widget, const void *signaldata, void *userdata);
-#define CMK_CALLBACK(f) ((CmkCallback) (f))
+};
 
 
 /**
@@ -102,28 +72,6 @@ typedef void (*CmkCallback) (CmkWidget *widget, const void *signaldata, void *us
  * Creates a blank widget.
  */
 CmkWidget * cmk_widget_new(void);
-
-/**
- * cmk_widget_init:
- *
- * Initializes a CmkWidget. For use when subclassing.
- */
-void cmk_widget_init(CmkWidget *widget);
-
-/**
- * cmk_widget_ref:
- *
- * Increases ref count by 1.
- */
-CmkWidget * cmk_widget_ref(CmkWidget *widget);
-
-/**
- * cmk_widget_unref:
- *
- * Decreases ref count by 1. If the ref count hits 0 the
- * #CmkWidget is deallocated.
- */
-void cmk_widget_unref(CmkWidget *widget);
 
 /**
  * cmk_widget_set_wrapper:
@@ -139,35 +87,6 @@ void cmk_widget_set_wrapper(CmkWidget *widget, void *wrapper);
  * set by cmk_widget_set_wrapper().
  */
 void * cmk_widget_get_wrapper(CmkWidget *widget);
-
-/**
- * cmk_widget_listen:
- *
- * Listens to a signal from the widget. Returns a unique
- * id which can be passed to cmk_widget_unlisten().
- */
-uint32_t cmk_widget_listen(CmkWidget *widget, const char *signalName, CmkCallback callback, void *userdata);
-
-/**
- * cmk_widget_unlisten:
- *
- * Unlisten to signal from cmk_widget_listen().
- */
-void cmk_widget_unlisten(CmkWidget *widget, uint32_t id);
-
-/**
- * Unlisten to all signals that match userdata,
- * for cmk_widget_listen().
- */
-void cmk_widget_unlisten_by_userdata(CmkWidget *widget, const void *userdata);
-
-/**
- * cmk_widget_emit:
- *
- * For internal use by widgets: emit a signal to listeners
- * attached through cmk_widget_listen().
- */
-void cmk_widget_emit(CmkWidget *widget, const char *signalName, const void *data);
 
 /**
  * cmk_widget_invalidate:
@@ -300,24 +219,6 @@ void cmk_widget_set_disabled(CmkWidget *widget, bool disabled);
  */
 bool cmk_widget_get_disabled(CmkWidget *widget);
 
-/**
- * cmk_widget_set_text_direction:
- *
- * Sets the default text direction on the widget. This is
- * automatically called by the #CmkWidget wrappers which support
- * it, including #CmkGtkWidget and #CmkClutterWidget.
- *
- * @rtl: True for default right-to-left, false for left-to-right.
- */
-void cmk_widget_set_text_direction(CmkWidget *widget, bool rtl);
-
-/**
- * cmk_widget_get_text_direction:
- *
- * Gets the default text direction.
- *
- * Returns: True for default right-to-left, false for left-to-right.
- */
-bool cmk_widget_get_text_direction(CmkWidget *widget);
+G_END_DECLS
 
 #endif

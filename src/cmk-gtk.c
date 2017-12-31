@@ -12,6 +12,7 @@ struct _CmkGtkWidget
 
 	CmkWidget *widget;
 	GdkWindow *eventWindow;
+	bool hasPangoContext;
 };
 
 static void cmk_gtk_widget_init(CmkGtkWidget *self);
@@ -24,14 +25,15 @@ static void on_size_allocate(GtkWidget *self_, GtkAllocation *allocation);
 static gboolean on_draw(GtkWidget *self_, cairo_t *cr);
 static gboolean on_event(GtkWidget *self_, GdkEvent *event);
 static void on_sensitivity_changed(CmkGtkWidget *self, GParamSpec *spec, gpointer userdata);
-static void on_text_direction_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata);
+static void on_screen_changed(GtkWidget *self_, GdkScreen *prevScreen);
+static void on_style_updated(GtkWidget *self_);
 static void get_preferred_width_for_height(GtkWidget *self_, gint height, gint *min, gint *nat);
 static void get_preferred_width(GtkWidget *self_, gint *min, gint *nat);
 static void get_preferred_height_for_width(GtkWidget *self_, gint width, gint *min, gint *nat);
 static void get_preferred_height(GtkWidget *self_, gint *min, gint *nat);
-static void on_widget_request_invalidate(UNUSED CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self);
-static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self);
-static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self);
+static void on_widget_request_invalidate(CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self);
+static void on_widget_request_relayout(CmkWidget *widget, void *signaldata, CmkGtkWidget *self);
+static void on_widget_event_mask_changed(CmkWidget *widget, GParamSpec *spec, CmkGtkWidget *self);
 static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
 
@@ -40,7 +42,7 @@ G_DEFINE_TYPE(CmkGtkWidget, cmk_gtk_widget, GTK_TYPE_WIDGET);
 
 GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 {
-	g_return_val_if_fail(widget, NULL);
+	g_return_val_if_fail(CMK_IS_WIDGET(widget), NULL);
 
 	// Return existing wrapper object if available
 	CmkGtkWidget *wrapper = cmk_widget_get_wrapper(widget);
@@ -55,13 +57,14 @@ GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 	g_return_val_if_fail(CMK_IS_GTK_WIDGET(self), NULL);
 
 	// Connect wrapper and widget
-	self->widget = cmk_widget_ref(widget);
+	self->widget = g_object_ref_sink(widget);
 	cmk_widget_set_wrapper(widget, self);
-	cmk_widget_listen(widget, "invalidate", CMK_CALLBACK(on_widget_request_invalidate), self);
-	cmk_widget_listen(widget, "relayout", CMK_CALLBACK(on_widget_request_relayout), self);
-	cmk_widget_listen(widget, "event-mask", CMK_CALLBACK(on_widget_event_mask_changed), self);
+	g_signal_connect(widget, "invalidate", G_CALLBACK(on_widget_request_invalidate), self);
+	g_signal_connect(widget, "relayout", G_CALLBACK(on_widget_request_relayout), self);
+	g_signal_connect(widget, "notify::event-mask", G_CALLBACK(on_widget_event_mask_changed), self);
 	g_signal_connect(self, "notify::sensitve", G_CALLBACK(on_sensitivity_changed), NULL);
-	g_signal_connect(self, "notify::direction-changed", G_CALLBACK(on_text_direction_changed), NULL);
+
+	self->hasPangoContext = (g_object_class_find_property(G_OBJECT_GET_CLASS(widget), "pango-context") != NULL);
 
 	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
 
@@ -73,18 +76,20 @@ static void cmk_gtk_widget_class_init(CmkGtkWidgetClass *class)
 	GObjectClass *base = G_OBJECT_CLASS(class);
 	base->dispose = on_dispose;
 
-	GtkWidgetClass *gwclass = GTK_WIDGET_CLASS(class);
-	gwclass->size_allocate = on_size_allocate;
-	gwclass->draw = on_draw;
-	gwclass->event = on_event;
-	gwclass->realize = on_realize;
-	gwclass->unrealize = on_unrealize;
-	gwclass->map = on_map;
-	gwclass->unmap = on_unmap;
-	gwclass->get_preferred_width = get_preferred_width;
-	gwclass->get_preferred_width_for_height = get_preferred_width_for_height;
-	gwclass->get_preferred_height = get_preferred_height;
-	gwclass->get_preferred_height_for_width = get_preferred_height_for_width;
+	GtkWidgetClass *widgetClass = GTK_WIDGET_CLASS(class);
+	widgetClass->size_allocate = on_size_allocate;
+	widgetClass->draw = on_draw;
+	widgetClass->event = on_event;
+	widgetClass->realize = on_realize;
+	widgetClass->unrealize = on_unrealize;
+	widgetClass->map = on_map;
+	widgetClass->unmap = on_unmap;
+	widgetClass->get_preferred_width = get_preferred_width;
+	widgetClass->get_preferred_width_for_height = get_preferred_width_for_height;
+	widgetClass->get_preferred_height = get_preferred_height;
+	widgetClass->get_preferred_height_for_width = get_preferred_height_for_width;
+	widgetClass->screen_changed = on_screen_changed;
+	widgetClass->style_updated = on_style_updated;
 }
 
 static void cmk_gtk_widget_init(CmkGtkWidget *self)
@@ -100,10 +105,10 @@ static void on_dispose(GObject *self_)
 	CmkGtkWidget *self = CMK_GTK_WIDGET(self_);
 	if(self->widget)
 	{
-		cmk_widget_unlisten_by_userdata(self->widget, self);
+		g_signal_handlers_disconnect_by_data(self->widget, self);
 		cmk_widget_set_wrapper(self->widget, NULL);
 	}
-	g_clear_pointer(&self->widget, cmk_widget_unref);
+	g_clear_object(&self->widget);
 	G_OBJECT_CLASS(cmk_gtk_widget_parent_class)->dispose(self_);
 }
 
@@ -330,9 +335,26 @@ static void on_sensitivity_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, 
 	cmk_widget_set_disabled(self->widget, !gtk_widget_get_sensitive(GTK_WIDGET(self)));
 }
 
-static void on_text_direction_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, UNUSED gpointer userdata)
+static void update_pango_context(GtkWidget *self_)
 {
-	cmk_widget_set_text_direction(self->widget, gtk_widget_get_direction(GTK_WIDGET(self)) == GTK_TEXT_DIR_RTL);
+	CmkWidget *widget = CMK_GTK_WIDGET(self_)->widget;
+	if(CMK_GTK_WIDGET(self_)->hasPangoContext)
+	{
+		g_object_set(widget,
+			"pango-context", gtk_widget_get_pango_context(self_),
+			NULL);
+	}
+}
+
+static void on_screen_changed(GtkWidget *self_, UNUSED GdkScreen *prevScreen)
+{
+	update_pango_context(self_);
+}
+
+static void on_style_updated(GtkWidget *self_)
+{
+	GTK_WIDGET_CLASS(cmk_gtk_widget_parent_class)->style_updated(self_);
+	update_pango_context(self_);
 }
 
 static void get_preferred_width_for_height(GtkWidget *self_, gint height, gint *min, gint *nat)
@@ -395,7 +417,7 @@ static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *si
 	gtk_widget_queue_resize(GTK_WIDGET(self));
 }
 
-static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self)
+static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED GParamSpec *spec, CmkGtkWidget *self)
 {
 	if(!self->eventWindow)
 		return;

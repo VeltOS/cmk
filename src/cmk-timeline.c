@@ -49,7 +49,7 @@ CmkTimeline * cmk_timeline_new(CmkWidget *widget, unsigned long ms)
 
 CmkTimeline * cmk_timeline_ref(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, NULL);
+	g_return_val_if_fail(self, NULL);
 
 	++self->refs;
 	return self;
@@ -57,7 +57,7 @@ CmkTimeline * cmk_timeline_ref(CmkTimeline *self)
 
 void cmk_timeline_unref(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 
 	--self->refs;
 
@@ -70,7 +70,7 @@ void cmk_timeline_unref(CmkTimeline *self)
 
 void cmk_timeline_set_action(CmkTimeline *self, CmkTimelineActionCallback action, void *userdata)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 
 	self->action = action;
 	self->actiondata = userdata;
@@ -78,7 +78,7 @@ void cmk_timeline_set_action(CmkTimeline *self, CmkTimelineActionCallback action
 
 void cmk_timeline_set_easing_mode_full(CmkTimeline *self, CmkTimelineEasingMode forward, CmkTimelineEasingMode backward)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 	self->forwardEasingMode = forward;
 	self->backwardEasingMode = backward;
 }
@@ -90,7 +90,7 @@ void cmk_timeline_set_easing_mode(CmkTimeline *self, CmkTimelineEasingMode mode)
 
 void cmk_timeline_set_multipliers(CmkTimeline *self, float forward, float backward)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 	if(forward < 0) forward = 0;
 	if(backward < 0) backward = 0;
 	self->forwardMultiplier = forward;
@@ -99,7 +99,7 @@ void cmk_timeline_set_multipliers(CmkTimeline *self, float forward, float backwa
 
 void cmk_timeline_set_loop_mode(CmkTimeline *self, CmkTimelineLoopMode mode)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 	self->loopMode = mode;
 }
 
@@ -124,8 +124,8 @@ static void cmk_timeline_start_internal(CmkTimeline *self)
 
 void cmk_timeline_start(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, );
-	cmk_return_if_fail(gTimelineHandlerCallback, );
+	g_return_if_fail(self);
+	g_return_if_fail(gTimelineHandlerCallback);
 
 	self->reverse = false;
 	cmk_timeline_start_internal(self);
@@ -133,8 +133,8 @@ void cmk_timeline_start(CmkTimeline *self)
 
 void cmk_timeline_start_reverse(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, );
-	cmk_return_if_fail(gTimelineHandlerCallback, );
+	g_return_if_fail(self);
+	g_return_if_fail(gTimelineHandlerCallback);
 
 	self->reverse = true;
 	cmk_timeline_start_internal(self);
@@ -142,15 +142,15 @@ void cmk_timeline_start_reverse(CmkTimeline *self)
 
 void cmk_timeline_continue(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, );
-	cmk_return_if_fail(gTimelineHandlerCallback, );
+	g_return_if_fail(self);
+	g_return_if_fail(gTimelineHandlerCallback);
 	cmk_timeline_start_internal(self);
 }
 
 void cmk_timeline_pause(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, );
-	cmk_return_if_fail(gTimelineHandlerCallback, );
+	g_return_if_fail(self);
+	g_return_if_fail(gTimelineHandlerCallback);
 
 	if(self->playing)
 	{
@@ -161,7 +161,7 @@ void cmk_timeline_pause(CmkTimeline *self)
 
 void cmk_timeline_goto(CmkTimeline *self, float percent)
 {
-	cmk_return_if_fail(self, );
+	g_return_if_fail(self);
 	if(percent > 1) percent = 1;
 	if(percent < 0) percent = 0;
 	self->progress = percent * self->length;
@@ -170,19 +170,19 @@ void cmk_timeline_goto(CmkTimeline *self, float percent)
 
 bool cmk_timeline_is_playing(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, false);
+	g_return_val_if_fail(self, false);
 	return self->playing;
 }
 
 float cmk_timeline_get_progress(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, 0);
+	g_return_val_if_fail(self, 0);
 	return self->easedProgress;
 }
 
 CmkWidget * cmk_timeline_get_widget(CmkTimeline *self)
 {
-	cmk_return_if_fail(self, NULL);
+	g_return_val_if_fail(self, NULL);
 	return self->widget;
 }
 
