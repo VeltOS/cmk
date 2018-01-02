@@ -25,6 +25,7 @@
 #include <cairo/cairo.h>
 #include <glib-object.h>
 #include "cmk-event.h"
+#include "cmk-palette.h"
 
 G_BEGIN_DECLS
 
@@ -218,6 +219,43 @@ void cmk_widget_set_disabled(CmkWidget *widget, bool disabled);
  * cmk_widget_get_disabled:
  */
 bool cmk_widget_get_disabled(CmkWidget *widget);
+
+/**
+ * cmk_widget_set_palette:
+ *
+ * Sets the color palette to use for this widget. A widget
+ * implementation may call this during its initialization
+ * to set its default color palette.
+ *
+ * Either using a custom palette, or something like
+ * cmk_widget_set_palette(widget, cmk_palette_get_primary(0));
+ * is appropriate.
+ */
+void cmk_widget_set_palette(CmkWidget *widget, CmkPalette *palette);
+
+/**
+ * cmk_widget_get_palette:
+ *
+ * Gets the palette set through cmk_widget_set_palette(),
+ * or if not set, uses cmk_palette_get_base() with the type
+ * of the widget.
+ */
+CmkPalette * cmk_widget_get_palette(CmkWidget *widget);
+
+/**
+ * cmk_widget_get_color:
+ *
+ * Equivelent to cmk_palette_get_color() with cmk_widget_get_palette()
+ * as the palette.
+ */
+const CmkColor * cmk_widget_get_color(CmkWidget *widget, const char *name);
+
+/**
+ * cmk_cairo_set_source_color:
+ *
+ * Calls cairo_set_source_rgba() using the values in CmkColor.
+ */
+void cmk_cairo_set_source_color(cairo_t *cr, const CmkColor *color);
 
 G_END_DECLS
 

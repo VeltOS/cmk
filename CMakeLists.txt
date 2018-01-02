@@ -28,6 +28,7 @@ set(CMK_SOURCES
 	src/cmk-timeline.c
 	src/cmk-widget.c
 	src/cmk-label.c
+	src/cmk-palette.c
 )
 
 if(CMK_WITH_GTK)

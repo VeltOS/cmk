@@ -13,6 +13,7 @@
 typedef struct _CmkWidgetPrivate CmkWidgetPrivate;
 struct _CmkWidgetPrivate
 {
+	bool constructed;
 	void *wrapper;
 
 	bool disabled;
@@ -26,6 +27,9 @@ struct _CmkWidgetPrivate
 	// Draw rect cache
 	CmkRect drawRect;
 	bool drawRectValid;
+
+	CmkPalette *palette;
+	bool defaultPalette;
 };
 
 enum
@@ -33,6 +37,7 @@ enum
 	PROP_DISABLED = 1,
 	PROP_EVENT_MASK,
 	PROP_WRAPPER,
+	PROP_PALETTE,
 	PROP_LAST
 };
 
@@ -51,6 +56,7 @@ G_DEFINE_TYPE_WITH_PRIVATE(CmkWidget, cmk_widget, G_TYPE_INITIALLY_UNOWNED);
 
 
 static void on_dispose(GObject *self_);
+static void on_constructed(GObject *self_);
 static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
 static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
 static void on_draw(CmkWidget *self, cairo_t *cr);
@@ -70,6 +76,7 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
 	base->dispose = on_dispose;
+	base->constructed = on_constructed;
 	base->get_property = get_property;
 	base->set_property = set_property;
 
@@ -114,6 +121,16 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		g_param_spec_pointer("wrapper", "wrapper", "wrapper",
 		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
+	/**
+	 * CmkWidget:palette:
+	 *
+	 * Widget's color palette.
+	 */
+	properties[PROP_PALETTE] =
+		g_param_spec_object("palette", "palette", "palette",
+		                    CMK_TYPE_PALETTE,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
 	/**
@@ -154,11 +171,29 @@ static void cmk_widget_init(CmkWidget *self)
 {
 	CmkWidgetPrivate *priv = PRIV(self);
 	priv->setWidth = priv->setHeight = -1;
+
+	// The object's final type isn't decided until after the
+	// *_init functions are called, so the type for the palette
+	// can't be found yet. So set a dummy value (base palette)
+	// and then if it isn't set during construction, it will
+	// updated to the correct default in on_constructed.
+	priv->defaultPalette = true;
+	priv->palette = g_object_ref(cmk_palette_get_base(0));
 }
 
 static void on_dispose(GObject *self_)
 {
 	G_OBJECT_CLASS(cmk_widget_parent_class)->dispose(self_);
+}
+
+static void on_constructed(GObject *self_)
+{
+	// Update to correct default palette,
+	// if it hasn't already been set
+	if(PRIV(CMK_WIDGET(self_))->defaultPalette)
+		cmk_widget_set_palette(CMK_WIDGET(self_), NULL);
+
+	G_OBJECT_CLASS(cmk_widget_parent_class)->constructed(self_);
 }
 
 static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec)
@@ -175,6 +210,9 @@ static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *ps
 		break;
 	case PROP_WRAPPER:
 		g_value_set_pointer(value, PRIV(self)->wrapper);
+		break;
+	case PROP_PALETTE:
+		g_value_set_object(value, cmk_widget_get_palette(self));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
@@ -193,6 +231,9 @@ static void set_property(GObject *self_, guint id, const GValue *value, GParamSp
 		break;
 	case PROP_WRAPPER:
 		cmk_widget_set_wrapper(self, g_value_get_pointer(value));
+		break;
+	case PROP_PALETTE:
+		cmk_widget_set_palette(self, g_value_get_object(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
@@ -410,4 +451,60 @@ bool cmk_widget_get_disabled(CmkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), false);
 	return PRIV(self)->disabled;
+}
+
+static void on_palette_changed(CmkWidget *self)
+{
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PALETTE]);
+	cmk_widget_invalidate(self, NULL);
+}
+
+void cmk_widget_set_palette(CmkWidget *self, CmkPalette *palette)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	CmkWidgetPrivate *priv = PRIV(self);
+
+	if(priv->palette && priv->palette == palette)
+		return;
+
+	if(priv->palette)
+		g_signal_handlers_disconnect_by_data(priv->palette, self);
+
+	g_clear_object(&priv->palette);
+
+	priv->defaultPalette = (palette == NULL);
+	if(!palette)
+		palette = cmk_palette_get_base(G_TYPE_FROM_INSTANCE(self));
+
+	priv->palette = g_object_ref(palette);
+
+	g_signal_connect_swapped(priv->palette,
+	                 "change",
+	                 G_CALLBACK(on_palette_changed),
+	                 self);
+
+	on_palette_changed(self);
+}
+
+bool cmk_widget_is_using_default_palette(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), false);
+	return PRIV(self)->defaultPalette;
+}
+
+CmkPalette * cmk_widget_get_palette(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
+	return PRIV(self)->palette;
+}
+
+const CmkColor * cmk_widget_get_color(CmkWidget *self, const char *name)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
+	return cmk_palette_get_color(PRIV(self)->palette, name);
+}
+
+void cmk_cairo_set_source_color(cairo_t *cr, const CmkColor *color)
+{
+	cairo_set_source_rgba(cr, color->r, color->g, color->b, color->a);
 }

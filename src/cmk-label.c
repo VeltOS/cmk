@@ -27,6 +27,8 @@ struct _CmkLabelPrivate
 
 	PangoLayout *layout;
 	bool singleline;
+
+	const CmkColor *foregroundColor;
 };
 
 enum
@@ -55,6 +57,7 @@ static void on_draw(CmkWidget *self_, cairo_t *cr);
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect);
+static void on_palette_changed(CmkLabel *self);
 
 static void set_pango_context(CmkLabel *self, PangoContext *context);
 
@@ -141,7 +144,11 @@ static void cmk_label_class_init(CmkLabelClass *class)
 static void cmk_label_init(CmkLabel *self)
 {
 	CmkLabelPrivate *priv = PRIV(self);
-	//priv->useDefaultSize = true;
+
+	g_signal_connect(self,
+	                 "notify::palette",
+	                 G_CALLBACK(on_palette_changed),
+	                 NULL);
 
 	// Make sure the default context exists
 	if(PANGO_IS_CONTEXT(gDefaultContext))
@@ -239,6 +246,7 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 	else
 		pango_layout_set_height(layout, height * PANGO_SCALE);
 
+	cmk_cairo_set_source_color(cr, priv->foregroundColor);
 	pango_cairo_show_layout(cr, layout);
 }
 
@@ -328,6 +336,11 @@ static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 	rect->y = (float)inkRect.y / PANGO_SCALE;
 	rect->width = (float)inkRect.width / PANGO_SCALE;
 	rect->height = (float)inkRect.height / PANGO_SCALE;
+}
+
+static void on_palette_changed(CmkLabel *self)
+{
+	PRIV(self)->foregroundColor = cmk_widget_get_color(CMK_WIDGET(self), "foreground");
 }
 
 void cmk_label_set_text(CmkLabel *self, const char *text)
