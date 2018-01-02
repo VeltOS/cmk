@@ -15,8 +15,21 @@ struct _CmkGtkWidget
 	bool hasPangoContext;
 };
 
-static void cmk_gtk_widget_init(CmkGtkWidget *self);
+enum
+{
+	PROP_WIDGET = 1,
+	PROP_LAST
+};
+
+static GParamSpec *properties[PROP_LAST];
+
+G_DEFINE_TYPE(CmkGtkWidget, cmk_gtk_widget, GTK_TYPE_WIDGET);
+
+
+static void on_constructed(GObject *self_);
 static void on_dispose(GObject *self_);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
 static void on_realize(GtkWidget *self_);
 static void on_unrealize(GtkWidget *self_);
 static void on_map(GtkWidget *self_);
@@ -37,9 +50,6 @@ static void on_widget_event_mask_changed(CmkWidget *widget, GParamSpec *spec, Cm
 static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
 
-G_DEFINE_TYPE(CmkGtkWidget, cmk_gtk_widget, GTK_TYPE_WIDGET);
-
-
 GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(widget), NULL);
@@ -52,29 +62,18 @@ GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 		return GTK_WIDGET(wrapper);
 	}
 
-	// Create new wrapper
-	CmkGtkWidget *self = CMK_GTK_WIDGET(g_object_new(CMK_TYPE_GTK_WIDGET, NULL));
-	g_return_val_if_fail(CMK_IS_GTK_WIDGET(self), NULL);
-
-	// Connect wrapper and widget
-	self->widget = g_object_ref_sink(widget);
-	cmk_widget_set_wrapper(widget, self);
-	g_signal_connect(widget, "invalidate", G_CALLBACK(on_widget_request_invalidate), self);
-	g_signal_connect(widget, "relayout", G_CALLBACK(on_widget_request_relayout), self);
-	g_signal_connect(widget, "notify::event-mask", G_CALLBACK(on_widget_event_mask_changed), self);
-	g_signal_connect(self, "notify::sensitve", G_CALLBACK(on_sensitivity_changed), NULL);
-
-	self->hasPangoContext = (g_object_class_find_property(G_OBJECT_GET_CLASS(widget), "pango-context") != NULL);
-
-	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
-
-	return GTK_WIDGET(self);
+	return GTK_WIDGET(g_object_new(CMK_TYPE_GTK_WIDGET,
+		"cmk-widget", widget,
+		NULL));
 }
 
 static void cmk_gtk_widget_class_init(CmkGtkWidgetClass *class)
 {
 	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->constructed = on_constructed;
 	base->dispose = on_dispose;
+	base->get_property = get_property;
+	base->set_property = set_property;
 
 	GtkWidgetClass *widgetClass = GTK_WIDGET_CLASS(class);
 	widgetClass->size_allocate = on_size_allocate;
@@ -90,6 +89,18 @@ static void cmk_gtk_widget_class_init(CmkGtkWidgetClass *class)
 	widgetClass->get_preferred_height_for_width = get_preferred_height_for_width;
 	widgetClass->screen_changed = on_screen_changed;
 	widgetClass->style_updated = on_style_updated;
+
+	/**
+	 * CmkGtkWidget:cmk-widget:
+	 *
+	 * The #CmkWidget that this #CmkGtkWidget is wrapping.
+	 */
+	properties[PROP_WIDGET] =
+		g_param_spec_object("cmk-widget", "cmk-widget", "cmk-widget",
+		                    CMK_TYPE_WIDGET,
+		                    G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
 }
 
 static void cmk_gtk_widget_init(CmkGtkWidget *self)
@@ -98,6 +109,53 @@ static void cmk_gtk_widget_init(CmkGtkWidget *self)
 	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
 	gtk_widget_set_can_default(GTK_WIDGET(self), TRUE);
 	gtk_widget_set_receives_default(GTK_WIDGET(self), TRUE);
+}
+
+static void on_constructed(GObject *self_)
+{
+	CmkGtkWidget *self = CMK_GTK_WIDGET(self_);
+
+	// Make sure widget (set in set_property) has
+	// been set and doesn't already have a wrapper
+	if(G_UNLIKELY(!CMK_IS_WIDGET(self->widget)))
+	{
+		g_critical("CmkGtkWidget constructed without a CmkWidget.");
+		g_clear_object(&self->widget);
+		return;
+	}
+
+	if(G_UNLIKELY(cmk_widget_get_wrapper(self->widget) != NULL))
+	{
+		g_critical("CmkGtkWidget constructed with a CmkWidget that already has a wrapper.");
+		g_clear_object(&self->widget);
+		return;
+	}
+
+	// Connect wrapper and widget
+	cmk_widget_set_wrapper(self->widget, self);
+
+	g_signal_connect(self->widget,
+	                 "invalidate",
+	                 G_CALLBACK(on_widget_request_invalidate),
+	                 self);
+	g_signal_connect(self->widget,
+	                 "relayout",
+	                 G_CALLBACK(on_widget_request_relayout),
+	                 self);
+	g_signal_connect(self->widget,
+	                 "notify::event-mask",
+	                 G_CALLBACK(on_widget_event_mask_changed),
+	                 self);
+	g_signal_connect(self,
+	                 "notify::sensitve",
+	                 G_CALLBACK(on_sensitivity_changed),
+	                 NULL);
+
+	self->hasPangoContext = (g_object_class_find_property(G_OBJECT_GET_CLASS(self->widget), "pango-context") != NULL);
+
+	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
+
+	G_OBJECT_CLASS(cmk_gtk_widget_parent_class)->constructed(self_);
 }
 
 static void on_dispose(GObject *self_)
@@ -110,6 +168,25 @@ static void on_dispose(GObject *self_)
 	}
 	g_clear_object(&self->widget);
 	G_OBJECT_CLASS(cmk_gtk_widget_parent_class)->dispose(self_);
+}
+
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec)
+{
+	if(id == PROP_WIDGET)
+		g_value_set_object(value, CMK_GTK_WIDGET(self_)->widget);
+	else
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self_, id, pspec);
+}
+
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec)
+{
+	if(id == PROP_WIDGET)
+	{
+		if(g_value_get_object(value))
+			CMK_GTK_WIDGET(self_)->widget = g_object_ref_sink(g_value_get_object(value));
+	}
+	else
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self_, id, pspec);
 }
 
 static void on_realize(GtkWidget *self_)
