@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 #include <cairo/cairo.h>
+#include <pango/pango.h>
 #include <glib-object.h>
 #include "cmk-event.h"
 #include "cmk-palette.h"
@@ -219,6 +220,25 @@ void cmk_widget_set_disabled(CmkWidget *widget, bool disabled);
  * cmk_widget_get_disabled:
  */
 bool cmk_widget_get_disabled(CmkWidget *widget);
+
+/**
+ * cmk_widget_set_pango_context:
+ *
+ * Sets the Pango context, to be used by widgets
+ * rendering text. This should only be used by
+ * the widget's wrapper. If no context is set,
+ * text rendering widgets will generate their own
+ * with default values.
+ */
+void cmk_widget_set_pango_context(CmkWidget *self, PangoContext *context);
+
+/**
+ * cmk_widget_get_pango_context:
+ *
+ * Gets this widget's Pango context set thorugh
+ * cmk_widget_set_pango_context().
+ */
+PangoContext * cmk_widget_get_pango_context(CmkWidget *self);
 
 /**
  * cmk_widget_set_palette:

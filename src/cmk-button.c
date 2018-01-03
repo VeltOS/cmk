@@ -5,163 +5,429 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "cmk-button.h"
 #include "cmk-timeline.h"
 
-#define PRIV(self) ((CmkButtonPrivate *)((self)->priv))
+#define CMK_BUTTON_EVENT_MASK (CMK_EVENT_BUTTON | CMK_EVENT_CROSSING | CMK_EVENT_KEY | CMK_EVENT_FOCUS)
 
-CmkButtonClass *cmk_button_class = NULL;
+#define ANIM_TIME 200
 
-typedef struct
+// Based on Material design spec
+#define WIDTH_PADDING 16 // dp
+#define HEIGHT_PADDING 9 // dp
+#define BEVEL_RADIUS 4 // dp
+
+typedef struct _CmkButtonPrivate CmkButtonPrivate;
+struct _CmkButtonPrivate
 {
 	CmkButtonType type;
-	float x;
-	CmkTimeline *timeline;
-} CmkButtonPrivate;
+	CmkLabel *label;
 
-static void on_destroy(CmkWidget *self_);
+	CmkTimeline *hover, *up, *down;
+	float clickX, clickY;
+	bool press, enter, focus;
+
+	const CmkColor *backgroundColor;
+	const CmkColor *selectedColor;
+	const CmkColor *hoverColor;
+};
+
+enum
+{
+	PROP_TYPE = 1,
+	PROP_LABEL,
+	PROP_PANGO_CONTEXT,
+	PROP_LAST,
+	PROP_OVERRIDE_EVENT_MASK
+};
+
+enum
+{
+	SIGNAL_ACTIVATE = 1,
+	SIGNAL_LAST
+};
+
+static GParamSpec *properties[PROP_LAST];
+static guint signals[SIGNAL_LAST];
+
+G_DEFINE_TYPE_WITH_PRIVATE(CmkButton, cmk_button, CMK_TYPE_WIDGET);
+#define PRIV(button) ((CmkButtonPrivate *)cmk_button_get_instance_private(button))
+
+
+static void on_dispose(GObject *self_);
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
+static void set_type(CmkButton *self, CmkButtonType type);
 static void on_draw(CmkWidget *self_, cairo_t *cr);
 static bool on_event(CmkWidget *self_, const CmkEvent *event);
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect);
+static void on_palette_changed(CmkButton *self);
+static void on_pango_context_changed(CmkButton *self);
 
 
 CmkButton * cmk_button_new(CmkButtonType type)
 {
-	CmkButton *self = calloc(sizeof(CmkButton), 1);
-	cmk_button_init(self, type);
-	return self;
+	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON,
+		"type", type,
+		NULL));
 }
 
 CmkButton * cmk_button_new_with_label(CmkButtonType type, const char *label)
 {
-	CmkButton *button = cmk_button_new(type);
-	cmk_button_set_label(button, label);
-	return button;
+	return CMK_BUTTON(g_object_new(CMK_TYPE_BUTTON,
+		"type", type,
+		"label", label,
+		NULL));
 }
 
-void cmk_button_init(CmkButton *self, CmkButtonType type)
+static void cmk_button_class_init(CmkButtonClass *class)
 {
-	cmk_widget_init((CmkWidget *)self);
+	GObjectClass *base = G_OBJECT_CLASS(class);
+	base->dispose = on_dispose;
+	base->get_property = get_property;
+	base->set_property = set_property;
 
-	if(cmk_button_class == NULL)
+	CmkWidgetClass *widgetClass = CMK_WIDGET_CLASS(class);
+	widgetClass->draw = on_draw;
+	widgetClass->event = on_event;
+	widgetClass->get_preferred_width = get_preferred_width;
+	widgetClass->get_preferred_height = get_preferred_height;
+	widgetClass->get_draw_rect = get_draw_rect;
+
+	/**
+	 * CmkButton:type:
+	 *
+	 * The type of the button, from the #CmkButtonType enum.
+	 */
+	properties[PROP_TYPE] =
+		g_param_spec_uint("type", "type", "type",
+		                  0, CMK_BUTTON_ACTION, 0,
+		                  G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkButton:label:
+	 *
+	 * The label text of the button.
+	 */
+	properties[PROP_LABEL] =
+		g_param_spec_string("label", "label", "label text",
+		                    NULL,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkLabel:pango-context:
+	 *
+	 * Sets the Pango context to use, or NULL to use
+	 * a default context. This can be set by the
+	 * widget wrapper class.
+	 */
+	properties[PROP_PANGO_CONTEXT] =
+		g_param_spec_object("pango-context", "pango context", "pango context",
+		                    PANGO_TYPE_CONTEXT,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	g_object_class_install_properties(base, PROP_LAST, properties);
+
+	g_object_class_override_property(base, PROP_OVERRIDE_EVENT_MASK, "event-mask");
+
+	/**
+	 * CmkButton::activate:
+	 * @widget: The button that was activated.
+	 *
+	 * Emitted when the button has been activated. That is,
+	 * the user has clicked it, or cmk_button_activate() has
+	 * been called.
+	 */
+	signals[SIGNAL_ACTIVATE] =
+		g_signal_new("activate",
+		             G_TYPE_FROM_CLASS(class),
+		             G_SIGNAL_RUN_FIRST,
+		             0, NULL, NULL, NULL,
+		             G_TYPE_NONE,
+		             0);
+}
+
+void cmk_button_init(CmkButton *self)
+{
+	PRIV(self)->label = cmk_label_new_bold(NULL);
+	//PangoLayout *layout = cmk_label_get_layout(PRIV(self)->label);
+	//PangoFontDescription *desc = pango_font_description_copy_static(pango_layout_get_font_description(layout));
+	//pango_font_description_set_variant(desc, PANGO_VARIANT_SMALL_CAPS);
+	//pango_layout_set_font_description(layout, desc);
+	//pango_font_description_free(desc);
+
+	PRIV(self)->hover = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
+	PRIV(self)->up = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
+	PRIV(self)->down = cmk_timeline_new(CMK_WIDGET(self), 500);
+
+	cmk_timeline_set_action(PRIV(self)->hover, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
+	cmk_timeline_set_action(PRIV(self)->up, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
+	cmk_timeline_set_action(PRIV(self)->down, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
+	cmk_timeline_set_easing_mode(PRIV(self)->down, CMK_TIMELINE_CIRC_OUT);
+
+	g_signal_connect(self,
+	                 "notify::palette",
+	                 G_CALLBACK(on_palette_changed),
+	                 NULL);
+	g_signal_connect(self,
+	                 "notify::pango-context",
+	                 G_CALLBACK(on_pango_context_changed),
+	                 NULL);
+}
+
+static void on_dispose(GObject *self_)
+{
+	G_OBJECT_CLASS(cmk_button_parent_class)->dispose(self_);
+}
+
+static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec)
+{
+	CmkButton *self = CMK_BUTTON(self_);
+
+	switch(id)
 	{
-		cmk_button_class = calloc(sizeof(CmkButtonClass), 1);
-		CmkWidgetClass *widgetClass = &cmk_button_class->parentClass;
-		*widgetClass = *cmk_widget_class;
-		widgetClass->destroy = on_destroy;
-		widgetClass->draw = on_draw;
-		widgetClass->event = on_event;
-		widgetClass->get_preferred_width = get_preferred_width;
-		widgetClass->get_preferred_height = get_preferred_height;
-		widgetClass->get_draw_rect = get_draw_rect;
+	case PROP_TYPE:
+		set_type(self, g_value_get_uint(value));
+		break;
+	case PROP_LABEL:
+		cmk_button_set_label(self, g_value_get_string(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
 	}
+}
 
-	((CmkWidget *)self)->class = cmk_button_class;
-	self->priv = calloc(sizeof(CmkButtonPrivate), 1);
+static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec)
+{
+	CmkButton *self = CMK_BUTTON(self_);
+
+	switch(id)
+	{
+	case PROP_TYPE:
+		g_value_set_uint(value, PRIV(self)->type);
+		break;
+	case PROP_LABEL:
+		g_value_set_string(value, cmk_button_get_label(self));
+		break;
+	case PROP_OVERRIDE_EVENT_MASK:
+		g_value_set_uint(value, CMK_BUTTON_EVENT_MASK);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
+		break;
+	}
+}
+
+static void set_type(CmkButton *self, CmkButtonType type)
+{
 	PRIV(self)->type = type;
-
-	PRIV(self)->timeline = cmk_timeline_new((CmkWidget *)self, 3000);
-	cmk_timeline_set_easing_mode(PRIV(self)->timeline, CMK_TIMELINE_QUAD_IN_OUT);
-	cmk_timeline_set_action(PRIV(self)->timeline, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
-	cmk_timeline_set_multipliers(PRIV(self)->timeline, 1, 1);
-	cmk_timeline_set_loop_mode(PRIV(self)->timeline, CMK_TIMELINE_LOOP_REVERSE);
-	cmk_widget_set_event_mask((CmkWidget *)self, cmk_widget_get_event_mask((CmkWidget *)self) | CMK_EVENT_MOTION);
-}
-
-void cmk_button_set_label(CmkButton *button, const char *label)
-{
-	// TODO
-}
-
-static void on_destroy(CmkWidget *self_)
-{
-	free(((CmkButton *)self_)->priv);
-	cmk_widget_class->destroy(self_);
+	if(type == CMK_BUTTON_RAISED)
+	{
+		cmk_widget_set_palette(CMK_WIDGET(self), cmk_palette_get_primary(G_TYPE_FROM_INSTANCE(self)));
+	}
+	else if(type == CMK_BUTTON_ACTION)
+	{
+		cmk_widget_set_palette(CMK_WIDGET(self), cmk_palette_get_secondary(G_TYPE_FROM_INSTANCE(self)));
+	}
+	// otherwise, the base palette is default
 }
 
 static void on_draw(CmkWidget *self_, cairo_t *cr)
 {
-	cairo_set_source_rgb(cr, 1, 1, 1);
+	CmkButtonPrivate *priv = PRIV(CMK_BUTTON(self_));
+
+	// Clear
+	//cairo_save(cr);
+	//cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+	//cairo_paint(cr);
+	//cairo_restore(cr);
+
+	float width, height;
+	cmk_widget_get_size(self_, &width, &height);
+
+	cairo_save(cr);
+
+	// Clip
+	if(priv->type == CMK_BUTTON_EMBED)
+	{
+		cairo_rectangle(cr, 0, 0, width, height);
+		cairo_clip(cr);
+	}
+	else
+	{
+		double radius;
+		static const double degrees = M_PI / 180.0;
+
+		if(priv->type == CMK_BUTTON_FLAT || priv->type == CMK_BUTTON_RAISED)
+			radius = BEVEL_RADIUS;
+		else
+			radius = MIN(width, height)/2;
+
+		radius = MIN(MAX(radius, 0), MIN(width,height)/2);
+
+		cairo_new_sub_path(cr);
+		cairo_arc(cr, width - radius, radius, radius, -90 * degrees, 0 * degrees);
+		cairo_arc(cr, width - radius, height - radius, radius, 0 * degrees, 90 * degrees);
+		cairo_arc(cr, radius, height - radius, radius, 90 * degrees, 180 * degrees);
+		cairo_arc(cr, radius, radius, radius, 180 * degrees, 270 * degrees);
+		cairo_close_path(cr);
+		cairo_clip(cr);
+	}
+
+	// Paint background
+	cmk_cairo_set_source_color(cr, priv->backgroundColor);
 	cairo_paint(cr);
 
-	float w, h;
-	cmk_widget_get_size(self_, &w, &h);
+	// Paint hover
+	cmk_cairo_set_source_color(cr, priv->hoverColor);
+	cairo_paint_with_alpha(cr, cmk_timeline_get_progress(priv->hover));
 
-	float p = cmk_timeline_get_progress(PRIV((CmkButton *)self_)->timeline);
-	//cairo_set_source_rgba(cr, 0, 0, 1, 1);
-	//cairo_rectangle(cr, -100, -100, w + 200, h + 200);
-	//cairo_fill(cr);
+	// Paint click bubble
+	float downProgress = cmk_timeline_get_progress(priv->down);
+	if(downProgress > 0)
+	{
+		float upProgress = cmk_timeline_get_progress(priv->up);
+		float x = priv->clickX;
+		float y = priv->clickY;
+		// Largest distance from any corner
+		float r1 = x*x + y*y;
+		float r2 = (width-x)*(width-x) + (height-y)*(height-y);
+		float r3 = (width-x)*(width-x) + (y)*(y);
+		float r4 = x*x + (height-y)*(height-y);
+		float r = sqrt(MAX(MAX(MAX(r1, r2), r3), r4));
+		
+		cairo_new_sub_path(cr);
+		cairo_arc(cr, x, y, r * downProgress, 0, 2 * M_PI);
+		cairo_close_path(cr);
+		cairo_clip(cr);
+		cmk_cairo_set_source_color(cr, priv->selectedColor);
+		cairo_paint_with_alpha(cr, (1 - upProgress));
+	}
 
-	cairo_set_source_rgb(cr, 1, 0, 0);
-	cairo_rectangle(cr, 0, 0, PRIV((CmkButton *)self_)->x, h);
-	cairo_fill(cr);
+	cairo_restore(cr);
 
-	cairo_set_source_rgba(cr, 0, 1, 1, 0.9);
-	cairo_rectangle(cr, 0, 0, p * w, h);
-	cairo_fill(cr);
-
-	cairo_set_source_rgb(cr, 0, 1, 0);
-	cairo_rectangle(cr, 0, 0, 20, 20);
-	cairo_fill(cr);
+	// Paint text
+	cairo_translate(cr, WIDTH_PADDING, HEIGHT_PADDING);
+	cmk_widget_draw(CMK_WIDGET(priv->label), cr);
 }
 
 static bool on_event(CmkWidget *self_, const CmkEvent *event)
 {
-	if(event->type == CMK_EVENT_MOTION)
-	{
-		float w, h;
-		cmk_widget_get_size(self_, &w, &h);
+	CmkButtonPrivate *priv = PRIV(CMK_BUTTON(self_));
 
-		CmkEventMotion *motion = (CmkEventMotion *)event;
-		int lesser = PRIV((CmkButton *)self_)->x;
-		if(motion->x < lesser)
-			lesser = motion->x;
-		int greater = PRIV((CmkButton *)self_)->x;
-		if(motion->x > greater)
-			greater = motion->x;
-		cairo_rectangle_int_t rect = {lesser, 0, greater - lesser, h};
-		rect.width += 1;
-		cairo_region_t *reg = cairo_region_create_rectangle(&rect);
-		cmk_widget_invalidate(self_, reg);
-		cairo_region_destroy(reg);
-		PRIV((CmkButton *)self_)->x = motion->x;
-		//printf("motion %f, %f\n", motion->x, motion->y);
+	if(event->type == CMK_EVENT_BUTTON)
+	{
+		CmkEventButton *button = (CmkEventButton *)event;
+		priv->press = button->press;
+		priv->clickX = button->x;
+		priv->clickY = button->y;
+		if(button->press)
+		{
+			cmk_timeline_goto(priv->down, 0);
+			cmk_timeline_goto(priv->up, 0);
+			cmk_timeline_start(priv->down);
+			cmk_timeline_start(priv->hover);
+		}
+		else
+		{
+			cmk_timeline_start(priv->up);
+			if(!(priv->enter || priv->focus))
+				cmk_timeline_start_reverse(priv->hover);
+		}
+		return true;
 	}
 	else if(event->type == CMK_EVENT_CROSSING)
 	{
 		CmkEventCrossing *crossing = (CmkEventCrossing *)event;
-		CmkTimeline *timeline = PRIV((CmkButton *)self_)->timeline;
-		if(crossing->enter)
-			cmk_timeline_start(timeline);
-		else
-			cmk_timeline_start_reverse(timeline);
+		priv->enter = crossing->enter;
+		if(!priv->press && !priv->focus)
+		{
+			if(crossing->enter)
+				cmk_timeline_start(priv->hover);
+			else
+				cmk_timeline_start_reverse(priv->hover);
+		}
+		return true;
 	}
-	return true;
+	else if(event->type == CMK_EVENT_FOCUS)
+	{
+		CmkEventFocus *focus = (CmkEventFocus *)event;
+		priv->focus = focus->in;
+		if(!priv->press && !priv->enter)
+		{
+			if(focus->in)
+				cmk_timeline_start(priv->hover);
+			else
+				cmk_timeline_start_reverse(priv->hover);
+		}
+	}
+	else if(event->type == CMK_EVENT_KEY)
+	{
+		// TODO
+	}
+	return false;
 }
 
-static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat)
+static void get_preferred_width(CmkWidget *self_, UNUSED float forHeight, float *min, float *nat)
 {
-	*min = *nat = 1000;
+	cmk_widget_get_preferred_width(CMK_WIDGET(PRIV(CMK_BUTTON(self_))->label), -1, min, nat);
+	*min += WIDTH_PADDING * 2;
+	*nat += WIDTH_PADDING * 2;
 }
 
-static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat)
+static void get_preferred_height(CmkWidget *self_, UNUSED float forWidth, float *min, float *nat)
 {
-	*min = *nat = 1000;
+	cmk_widget_get_preferred_height(CMK_WIDGET(PRIV(CMK_BUTTON(self_))->label), -1, min, nat);
+	*min += HEIGHT_PADDING * 2;
+	*nat += HEIGHT_PADDING * 2;
 }
 
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 {
-	float width, height;
-	cmk_widget_get_size(self_, &width, &height);
-
 	rect->x = rect->y = 0;
-	rect->width = width;
-	rect->height = height;
-	//rect->x = -20;
-	//rect->y = -20;
-	//rect->width = width + 40;
-	//rect->height = height + 40;
+	cmk_widget_get_size(self_, &rect->width, &rect->height);
 }
 
+static void on_palette_changed(CmkButton *self)
+{
+	CmkButtonPrivate *priv = PRIV(self);
+	CmkWidget *self_ = CMK_WIDGET(self);
+	priv->backgroundColor = cmk_widget_get_color(self_, "background");
+	priv->selectedColor = cmk_widget_get_color(self_, "selected");
+	priv->hoverColor = cmk_widget_get_color(self_, "hover");
+	cmk_widget_set_palette(CMK_WIDGET(PRIV(self)->label), cmk_widget_get_palette(CMK_WIDGET(self)));
+}
+
+static void on_pango_context_changed(CmkButton *self)
+{
+	cmk_widget_set_pango_context(CMK_WIDGET(PRIV(self)->label), cmk_widget_get_pango_context(CMK_WIDGET(self)));
+}
+
+void cmk_button_set_label(CmkButton *self, const char *label)
+{
+	g_return_if_fail(CMK_IS_BUTTON(self));
+	cmk_label_set_text(PRIV(self)->label, label);
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_LABEL]);
+}
+
+const char * cmk_button_get_label(CmkButton *self)
+{
+	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
+	return cmk_label_get_text(PRIV(self)->label);
+}
+
+CmkLabel * cmk_button_get_label_widget(CmkButton *self)
+{
+	g_return_val_if_fail(CMK_IS_BUTTON(self), NULL);
+	return PRIV(self)->label;
+}
+
+void cmk_button_activate(CmkButton *self)
+{
+	g_return_if_fail(CMK_IS_BUTTON(self));
+	g_signal_emit(self, signals[SIGNAL_ACTIVATE], 0);
+}

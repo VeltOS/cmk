@@ -14,7 +14,6 @@
 #define __CMK_LABEL_H__
 
 #include "cmk-widget.h"
-#include <pango/pango.h>
 
 #define CMK_TYPE_LABEL cmk_label_get_type()
 G_DECLARE_DERIVABLE_TYPE(CmkLabel, cmk_label, CMK, LABEL, GInitiallyUnowned);

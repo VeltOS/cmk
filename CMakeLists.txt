@@ -24,7 +24,7 @@ endif()
 # Create library target
 set(CMK_DEPENDENCIES cairo>=1.15 pango>=1.40)
 set(CMK_SOURCES
-	#src/cmk-button.c
+	src/cmk-button.c
 	src/cmk-timeline.c
 	src/cmk-widget.c
 	src/cmk-label.c

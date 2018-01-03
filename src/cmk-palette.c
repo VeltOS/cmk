@@ -13,11 +13,12 @@ struct _CmkPalette
 	CmkPalette *inherit;
 
 	GArray *colors;
-	float shade;
 };
 
 static const CmkColor kBackground = {1, 1, 1, 1};
 static const CmkColor kForeground = {0, 0, 0, 1};
+static const CmkColor kHover      = {0, 0, 0, 0.1};
+static const CmkColor kSelected   = {0, 0, 0, 0.2};
 static const CmkColor kAlert      = {0.827, 0.184, 0.184, 1};
 
 static guint changeSignal;
@@ -102,7 +103,6 @@ static void cmk_palette_init(CmkPalette *self)
 {
 	self->colors = g_array_new(FALSE, TRUE, sizeof(CmkNamedColor));
 	g_array_set_clear_func(self->colors, (GDestroyNotify)free_named_color);
-	self->shade = -1;
 }
 
 static void on_dispose(GObject *self_)
@@ -212,6 +212,10 @@ const CmkColor * cmk_palette_get_color(CmkPalette *self, const char *name)
 			return &kBackground;
 		else if(g_strcmp0(name, "foreground") == 0)
 			return &kForeground;
+		else if(g_strcmp0(name, "hover") == 0)
+			return &kHover;
+		else if(g_strcmp0(name, "selected") == 0)
+			return &kSelected;
 		else if(g_strcmp0(name, "alert") == 0)
 			return &kAlert;
 		else
@@ -221,35 +225,4 @@ const CmkColor * cmk_palette_get_color(CmkPalette *self, const char *name)
 	{
 		return &(((CmkNamedColor *)self->colors->data)[i].color);
 	}
-}
-
-void cmk_palette_set_shade(CmkPalette *self, float shade)
-{
-	g_return_if_fail(CMK_IS_PALETTE(self));
-	self->shade = shade;
-	g_signal_emit(self, changeSignal, 0);
-}
-
-float cmk_palette_get_shade(CmkPalette *self)
-{
-	g_return_val_if_fail(CMK_IS_PALETTE(self), 0);
-	if(self->shade < 0)
-	{
-		if(self->inherit)
-			return cmk_palette_get_shade(self->inherit);
-		else
-			return 1;
-	}
-	else
-	{
-		return self->shade;
-	}
-}
-
-void cmk_palette_shade(CmkPalette *self, const CmkColor *color, CmkColor *out)
-{
-	*out = *color;
-	out->r *= self->shade;
-	out->g *= self->shade;
-	out->b *= self->shade;
 }

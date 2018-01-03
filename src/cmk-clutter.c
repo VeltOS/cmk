@@ -153,17 +153,14 @@ static void on_constructed(GObject *self_)
 	                 G_CALLBACK(on_reactive_changed),
 	                 NULL);
 
-	if(g_object_class_find_property(G_OBJECT_GET_CLASS(self->widget), "pango-context") != NULL)
-	{
-		g_signal_connect(self,
-		                 "notify::text-direction",
-		                 G_CALLBACK(update_pango_context),
-		                 NULL);
-		g_signal_connect_swapped(clutter_get_default_backend(),
-		                 "settings-changed",
-		                 G_CALLBACK(update_pango_context),
-		                 self);
-	}
+	g_signal_connect(self,
+	                 "notify::text-direction",
+	                 G_CALLBACK(update_pango_context),
+	                 NULL);
+	g_signal_connect_swapped(clutter_get_default_backend(),
+	                 "settings-changed",
+	                 G_CALLBACK(update_pango_context),
+	                 self);
 
 	cmk_timeline_set_handler_callback(cmk_clutter_timeline_callback, false);
 
@@ -344,9 +341,7 @@ static void on_reactive_changed(CmkClutterWidget *self, UNUSED GParamSpec *spec,
 
 static void update_pango_context(CmkClutterWidget *self)
 {
-	g_object_set(self->widget,
-		"pango-context", clutter_actor_get_pango_context(CLUTTER_ACTOR(self)),
-		NULL);
+	cmk_widget_set_pango_context(self->widget, clutter_actor_get_pango_context(CLUTTER_ACTOR(self)));
 }
 
 // http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2

@@ -12,7 +12,6 @@ struct _CmkGtkWidget
 
 	CmkWidget *widget;
 	GdkWindow *eventWindow;
-	bool hasPangoContext;
 };
 
 enum
@@ -49,6 +48,11 @@ static void on_widget_request_relayout(CmkWidget *widget, void *signaldata, CmkG
 static void on_widget_event_mask_changed(CmkWidget *widget, GParamSpec *spec, CmkGtkWidget *self);
 static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
+
+void cmk_gtk_init(void)
+{
+	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
+}
 
 GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 {
@@ -150,10 +154,6 @@ static void on_constructed(GObject *self_)
 	                 "notify::sensitve",
 	                 G_CALLBACK(on_sensitivity_changed),
 	                 NULL);
-
-	self->hasPangoContext = (g_object_class_find_property(G_OBJECT_GET_CLASS(self->widget), "pango-context") != NULL);
-
-	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
 
 	G_OBJECT_CLASS(cmk_gtk_widget_parent_class)->constructed(self_);
 }
@@ -415,12 +415,7 @@ static void on_sensitivity_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, 
 static void update_pango_context(GtkWidget *self_)
 {
 	CmkWidget *widget = CMK_GTK_WIDGET(self_)->widget;
-	if(CMK_GTK_WIDGET(self_)->hasPangoContext)
-	{
-		g_object_set(widget,
-			"pango-context", gtk_widget_get_pango_context(self_),
-			NULL);
-	}
+	cmk_widget_set_pango_context(widget, gtk_widget_get_pango_context(self_));
 }
 
 static void on_screen_changed(GtkWidget *self_, UNUSED GdkScreen *prevScreen)

@@ -33,8 +33,7 @@ struct _CmkLabelPrivate
 
 enum
 {
-	PROP_PANGO_CONTEXT = 1,
-	PROP_TEXT,
+	PROP_TEXT = 1,
 	PROP_SINGLE_LINE,
 	// TODO
 	//PROP_ALIGNMENT,
@@ -58,8 +57,7 @@ static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, f
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect);
 static void on_palette_changed(CmkLabel *self);
-
-static void set_pango_context(CmkLabel *self, PangoContext *context);
+static void on_pango_context_changed(CmkLabel *self);
 
 static PangoLayout * cmk_pango_layout_copy_new_context(PangoLayout *original, PangoContext *context);
 
@@ -91,18 +89,6 @@ static void cmk_label_class_init(CmkLabelClass *class)
 	widgetClass->get_preferred_width = get_preferred_width;
 	widgetClass->get_preferred_height = get_preferred_height;
 	widgetClass->get_draw_rect = get_draw_rect;
-
-	/**
-	 * CmkLabel:pango-context:
-	 *
-	 * Sets the Pango context to use, or NULL to use
-	 * a default context. This can be set by the
-	 * widget wrapper class.
-	 */
-	properties[PROP_PANGO_CONTEXT] =
-		g_param_spec_object("pango-context", "pango context", "pango context",
-		                    PANGO_TYPE_CONTEXT,
-		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
 	/**
 	 * CmkWidget:text:
@@ -145,11 +131,6 @@ static void cmk_label_init(CmkLabel *self)
 {
 	CmkLabelPrivate *priv = PRIV(self);
 
-	g_signal_connect(self,
-	                 "notify::palette",
-	                 G_CALLBACK(on_palette_changed),
-	                 NULL);
-
 	// Make sure the default context exists
 	if(PANGO_IS_CONTEXT(gDefaultContext))
 	{
@@ -168,6 +149,15 @@ static void cmk_label_init(CmkLabel *self)
 	priv->context = g_object_ref(priv->defaultContextRef);
 	priv->layout = pango_layout_new(priv->context);
 	priv->contextIsSet = false;
+
+	g_signal_connect(self,
+	                 "notify::palette",
+	                 G_CALLBACK(on_palette_changed),
+	                 NULL);
+	g_signal_connect(self,
+	                 "notify::pango-context",
+	                 G_CALLBACK(on_pango_context_changed),
+	                 NULL);
 }
 
 static void on_dispose(GObject *self_)
@@ -185,9 +175,6 @@ static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *ps
 	
 	switch(id)
 	{
-	case PROP_PANGO_CONTEXT:
-		g_value_set_object(value, PRIV(self)->contextIsSet ? PRIV(self)->context : NULL);
-		break;
 	case PROP_TEXT:
 		g_value_set_string(value, cmk_label_get_text(self));
 		break;
@@ -212,9 +199,6 @@ static void set_property(GObject *self_, guint id, const GValue *value, GParamSp
 	
 	switch(id)
 	{
-	case PROP_PANGO_CONTEXT:
-		set_pango_context(self, PANGO_CONTEXT(g_value_get_object(value)));
-		break;
 	case PROP_TEXT:
 		cmk_label_set_text(self, g_value_get_string(value));
 		break;
@@ -494,7 +478,7 @@ void cmk_label_set_bold(CmkLabel *self, bool bold)
 	g_return_if_fail(CMK_IS_LABEL(self));
 
 	PangoFontDescription *desc = get_write_font_desc(self);
-	pango_font_description_set_weight(desc, bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL);
+	pango_font_description_set_weight(desc, bold ? PANGO_WEIGHT_MEDIUM : PANGO_WEIGHT_NORMAL);
 	pango_layout_set_font_description(PRIV(self)->layout, desc);
 	pango_font_description_free(desc);
 
@@ -520,9 +504,11 @@ PangoLayout * cmk_label_get_layout(CmkLabel *self)
 	return PRIV(self)->layout;
 }
 
-static void set_pango_context(CmkLabel *self, PangoContext *context)
+static void on_pango_context_changed(CmkLabel *self)
 {
 	CmkLabelPrivate *priv = PRIV(self);
+
+	PangoContext *context = cmk_widget_get_pango_context(CMK_WIDGET(self));
 
 	// If setting to default context and it's already default, ignore
 	if(!context && priv->context == priv->defaultContextRef)
@@ -570,7 +556,6 @@ static void set_pango_context(CmkLabel *self, PangoContext *context)
 
 	// Relayout
 	cmk_widget_relayout(CMK_WIDGET(self));
-	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PANGO_CONTEXT]);
 }
 
 // Based on the pango_layout_copy() source code.

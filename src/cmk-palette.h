@@ -143,41 +143,10 @@ void cmk_palette_set_colors(CmkPalette *palette, const CmkNamedColor *colors);
  * cmk_palette_get_color:
  *
  * Gets a named color, or NULL if it doesn't exist. The colors
- * "background", "foreground", and "alert" are guaranteed to
- * exist (and set to white, black, and red, respectively, if
- * they are not set otherwise).
+ * "background", "foreground", "hover", "selected", and "alert"
+ * are guaranteed to exist.
  */
 const CmkColor * cmk_palette_get_color(CmkPalette *palette, const char *name);
-
-/**
- * cmk_palette_set_shade:
- *
- * Sets the shading multiplier. This is used to created accents
- * of a color in the palette, generally for effects such as
- * mouse-over.
- *
- * For light themes where shading is darker, this should be
- * less than 1. For dark themes where the shading is lighter,
- * this should be greater than 1.
- *
- * Set to a negative value to inherit.
- */
-void cmk_palette_set_shade(CmkPalette *palette, float shade);
-
-/**
- * cmk_palette_get_shade:
- *
- * Gets the palette's shade multiplier.
- */
-float cmk_palette_get_shade(CmkPalette *palette);
-
-/**
- * cmk_palette_shade:
- *
- * Applies the shade multiplier to the input color, and
- * writes the result to out.
- */
-void cmk_palette_shade(CmkPalette *palette, const CmkColor *color, CmkColor *out);
 
 G_END_DECLS
 

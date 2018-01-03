@@ -30,6 +30,8 @@ struct _CmkWidgetPrivate
 
 	CmkPalette *palette;
 	bool defaultPalette;
+
+	PangoContext *pangoContext;
 };
 
 enum
@@ -38,6 +40,7 @@ enum
 	PROP_EVENT_MASK,
 	PROP_WRAPPER,
 	PROP_PALETTE,
+	PROP_PANGO_CONTEXT,
 	PROP_LAST
 };
 
@@ -131,6 +134,18 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 		                    CMK_TYPE_PALETTE,
 		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
+	/**
+	 * CmkLabel:pango-context:
+	 *
+	 * Sets the Pango context to use, or NULL to use
+	 * a default context. This can be set by the
+	 * widget wrapper class.
+	 */
+	properties[PROP_PANGO_CONTEXT] =
+		g_param_spec_object("pango-context", "pango context", "pango context",
+		                    PANGO_TYPE_CONTEXT,
+		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
 	g_object_class_install_properties(base, PROP_LAST, properties);
 
 	/**
@@ -214,6 +229,9 @@ static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *ps
 	case PROP_PALETTE:
 		g_value_set_object(value, cmk_widget_get_palette(self));
 		break;
+	case PROP_PANGO_CONTEXT:
+		g_value_set_object(value, PRIV(self)->pangoContext);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
 		break;
@@ -234,6 +252,9 @@ static void set_property(GObject *self_, guint id, const GValue *value, GParamSp
 		break;
 	case PROP_PALETTE:
 		cmk_widget_set_palette(self, g_value_get_object(value));
+		break;
+	case PROP_PANGO_CONTEXT:
+		cmk_widget_set_pango_context(self, g_value_get_object(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
@@ -451,6 +472,20 @@ bool cmk_widget_get_disabled(CmkWidget *self)
 {
 	g_return_val_if_fail(CMK_IS_WIDGET(self), false);
 	return PRIV(self)->disabled;
+}
+
+void cmk_widget_set_pango_context(CmkWidget *self, PangoContext *context)
+{
+	g_return_if_fail(CMK_IS_WIDGET(self));
+	g_clear_object(&PRIV(self)->pangoContext);
+	PRIV(self)->pangoContext = g_object_ref(context);
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PANGO_CONTEXT]);
+}
+
+PangoContext * cmk_widget_get_pango_context(CmkWidget *self)
+{
+	g_return_val_if_fail(CMK_IS_WIDGET(self), NULL);
+	return PRIV(self)->pangoContext;
 }
 
 static void on_palette_changed(CmkWidget *self)
