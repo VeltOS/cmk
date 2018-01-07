@@ -333,7 +333,11 @@ void cmk_widget_draw(CmkWidget *self, cairo_t *cr)
 	g_return_if_fail(cr != NULL);
 
 	if(CMK_WIDGET_GET_CLASS(self)->draw)
+	{
+		cairo_save(cr);
 		CMK_WIDGET_GET_CLASS(self)->draw(self, cr);
+		cairo_restore(cr);
+	}
 }
 
 bool cmk_widget_event(CmkWidget *self, const CmkEvent *event)

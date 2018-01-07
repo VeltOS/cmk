@@ -8,21 +8,24 @@
 #include <math.h>
 #include "cmk-button.h"
 #include "cmk-timeline.h"
+#include "cmk-shadow.h"
 
 #define CMK_BUTTON_EVENT_MASK (CMK_EVENT_BUTTON | CMK_EVENT_CROSSING | CMK_EVENT_KEY | CMK_EVENT_FOCUS)
 
-#define ANIM_TIME 200
+#define ANIM_TIME 2000//150
 
 // Based on Material design spec
 #define WIDTH_PADDING 16 // dp
 #define HEIGHT_PADDING 9 // dp
 #define BEVEL_RADIUS 4 // dp
+#define SHADOW_RADIUS 40
 
 typedef struct _CmkButtonPrivate CmkButtonPrivate;
 struct _CmkButtonPrivate
 {
 	CmkButtonType type;
 	CmkLabel *label;
+	CmkShadow *shadow;
 
 	CmkTimeline *hover, *up, *down;
 	float clickX, clickY;
@@ -152,6 +155,9 @@ static void cmk_button_class_init(CmkButtonClass *class)
 
 void cmk_button_init(CmkButton *self)
 {
+	PRIV(self)->shadow = cmk_shadow_new(SHADOW_RADIUS, false);
+	cmk_shadow_set_radius(PRIV(self)->shadow, 1);
+
 	PRIV(self)->label = cmk_label_new_bold(NULL);
 	//PangoLayout *layout = cmk_label_get_layout(PRIV(self)->label);
 	//PangoFontDescription *desc = pango_font_description_copy_static(pango_layout_get_font_description(layout));
@@ -161,7 +167,7 @@ void cmk_button_init(CmkButton *self)
 
 	PRIV(self)->hover = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
 	PRIV(self)->up = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
-	PRIV(self)->down = cmk_timeline_new(CMK_WIDGET(self), 500);
+	PRIV(self)->down = cmk_timeline_new(CMK_WIDGET(self), 600);
 
 	cmk_timeline_set_action(PRIV(self)->hover, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
 	cmk_timeline_set_action(PRIV(self)->up, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
@@ -246,8 +252,33 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 	//cairo_paint(cr);
 	//cairo_restore(cr);
 
+
 	float width, height;
 	cmk_widget_get_size(self_, &width, &height);
+
+	//cairo_set_source_rgba(cr, 1, 0, 0, 1);
+	//cairo_rectangle(cr, 0, 0, 30, height + 1);
+	//cairo_fill(cr);
+
+	cmk_shadow_set_rectangle(priv->shadow, width - SHADOW_RADIUS * 2, height - SHADOW_RADIUS * 2);
+	cmk_shadow_set_radius(priv->shadow, cmk_timeline_get_progress(priv->hover));
+
+	//float x_ = 1, y_ = 1;
+	//cairo_device_to_user(cr, &x_, &y_);
+	//g_message("dev to user: %f, %f", x_, y_);
+
+	clock_t s = clock();
+	cairo_save(cr);
+	cairo_translate(cr, SHADOW_RADIUS, SHADOW_RADIUS);
+	cairo_translate(cr, (width - SHADOW_RADIUS * 2) / 2, (height - SHADOW_RADIUS * 2) / 2);
+	//cairo_scale(cr, 0.98, 0.98);
+	//cairo_rotate(cr, M_PI * cmk_timeline_get_progress(priv->hover));
+	cairo_translate(cr, -(width - SHADOW_RADIUS * 2) / 2, -(height - SHADOW_RADIUS * 2) / 2);
+	cmk_shadow_draw(priv->shadow, cr);
+	cairo_restore(cr);
+	clock_t e = clock();
+	g_message("draw %f", (float)(e - s) / CLOCKS_PER_SEC * 1000.);
+	return;
 
 	cairo_save(cr);
 
@@ -259,6 +290,7 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 	}
 	else
 	{
+
 		double radius;
 		static const double degrees = M_PI / 180.0;
 
@@ -375,21 +407,26 @@ static bool on_event(CmkWidget *self_, const CmkEvent *event)
 static void get_preferred_width(CmkWidget *self_, UNUSED float forHeight, float *min, float *nat)
 {
 	cmk_widget_get_preferred_width(CMK_WIDGET(PRIV(CMK_BUTTON(self_))->label), -1, min, nat);
-	*min += WIDTH_PADDING * 2;
-	*nat += WIDTH_PADDING * 2;
+	//*min += WIDTH_PADDING * 2;
+	//*nat += WIDTH_PADDING * 2;
+	*min = *nat = 800;
 }
 
 static void get_preferred_height(CmkWidget *self_, UNUSED float forWidth, float *min, float *nat)
 {
 	cmk_widget_get_preferred_height(CMK_WIDGET(PRIV(CMK_BUTTON(self_))->label), -1, min, nat);
-	*min += HEIGHT_PADDING * 2;
-	*nat += HEIGHT_PADDING * 2;
+	*min = *nat = 800;
+	//*min += HEIGHT_PADDING * 2 * 20;
+	//*nat += HEIGHT_PADDING * 2 * 20;
 }
 
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 {
-	rect->x = rect->y = 0;
 	cmk_widget_get_size(self_, &rect->width, &rect->height);
+	//rect->x -= SHADOW_RADIUS;
+	//rect->y -= SHADOW_RADIUS;
+	//rect->width += SHADOW_RADIUS * 2;
+	//rect->height += SHADOW_RADIUS * 2 * 20;
 }
 
 static void on_palette_changed(CmkButton *self)

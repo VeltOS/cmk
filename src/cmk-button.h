@@ -43,8 +43,6 @@ struct _CmkButtonClass
 	CmkWidgetClass parentClass;
 };
 
-extern CmkButtonClass *cmk_button_class;
-
 /**
  * cmk_button_new:
  *

@@ -29,6 +29,7 @@ set(CMK_SOURCES
 	src/cmk-widget.c
 	src/cmk-label.c
 	src/cmk-palette.c
+	src/cmk-shadow.c
 )
 
 if(CMK_WITH_GTK)

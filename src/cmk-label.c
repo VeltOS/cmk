@@ -331,6 +331,7 @@ void cmk_label_set_text(CmkLabel *self, const char *text)
 {
 	g_return_if_fail(CMK_IS_LABEL(self));
 	pango_layout_set_text(PRIV(self)->layout, text ? text : "", -1);
+	cmk_widget_relayout(CMK_WIDGET(self));
 	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_TEXT]);
 }
 

@@ -40,15 +40,15 @@ int main(int argc, char **argv)
 	gtk_widget_set_halign(box, GTK_ALIGN_CENTER);
 
 	// Add widget
-	CmkLabel *label = cmk_label_new("abcdefghijklm nopqrstuvwxyz");
-	PangoLayout *layout = cmk_label_get_layout(label);
-	pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-	//gtk_box_pack_start(GTK_BOX(box
-	gtk_box_set_center_widget(GTK_BOX(box), CMK_GTK(label));
-	//gtk_container_add(GTK_CONTAINER(vbox), CMK_GTK(label));
-	gtk_widget_set_valign(CMK_GTK(label), GTK_ALIGN_CENTER);
-	gtk_widget_set_halign(CMK_GTK(label), GTK_ALIGN_CENTER);
-	gtk_widget_show(CMK_GTK(label));
+	//CmkLabel *label = cmk_label_new("abcdefghijklm nopqrstuvwxyz");
+	//PangoLayout *layout = cmk_label_get_layout(label);
+	//pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+	////gtk_box_pack_start(GTK_BOX(box
+	//gtk_box_set_center_widget(GTK_BOX(box), CMK_GTK(label));
+	////gtk_container_add(GTK_CONTAINER(vbox), CMK_GTK(label));
+	//gtk_widget_set_valign(CMK_GTK(label), GTK_ALIGN_CENTER);
+	//gtk_widget_set_halign(CMK_GTK(label), GTK_ALIGN_CENTER);
+	//gtk_widget_show(CMK_GTK(label));
 
 	// Button
 	CmkButton *button = cmk_button_new_with_label(CMK_BUTTON_RAISED, "Install VeltOS");
