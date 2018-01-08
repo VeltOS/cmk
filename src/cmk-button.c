@@ -34,6 +34,8 @@ struct _CmkButtonPrivate
 	const CmkColor *backgroundColor;
 	const CmkColor *selectedColor;
 	const CmkColor *hoverColor;
+
+	float prevWidth, prevHeight;
 };
 
 enum
@@ -166,12 +168,12 @@ void cmk_button_init(CmkButton *self)
 
 	PRIV(self)->hover = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
 	PRIV(self)->up = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
-	PRIV(self)->down = cmk_timeline_new(CMK_WIDGET(self), 600);
+	PRIV(self)->down = cmk_timeline_new(CMK_WIDGET(self), 300);
 
 	cmk_timeline_set_action(PRIV(self)->hover, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
 	cmk_timeline_set_action(PRIV(self)->up, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
 	cmk_timeline_set_action(PRIV(self)->down, (CmkTimelineActionCallback)cmk_widget_invalidate, NULL);
-	cmk_timeline_set_easing_mode(PRIV(self)->down, CMK_TIMELINE_CIRC_OUT);
+	cmk_timeline_set_easing_mode(PRIV(self)->down, CMK_TIMELINE_SINE_OUT);
 
 	g_signal_connect(self,
 	                 "notify::palette",
@@ -249,6 +251,18 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 	cmk_widget_get_size(self_, &width, &height);
 
 	cairo_save(cr);
+	
+	// Shadow
+	cmk_shadow_set_percent(priv->shadow,
+		0.5 + 0.5 * cmk_timeline_get_progress(priv->hover));
+
+	if(priv->type == CMK_BUTTON_RAISED)
+	{
+		cmk_shadow_set_rectangle(priv->shadow, width, height, false);
+		cairo_translate(cr, 0, 1);
+		cmk_shadow_draw(priv->shadow, cr);
+		cairo_translate(cr, 0, -1);
+	}
 
 	// Clip
 	if(priv->type == CMK_BUTTON_EMBED)
@@ -258,12 +272,6 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 	}
 	else
 	{
-		cmk_shadow_set_rectangle(priv->shadow, width, height, false);
-		cmk_shadow_set_percent(priv->shadow, 0.5 + 0.5 * cmk_timeline_get_progress(priv->hover));
-		cairo_translate(cr, 0, 1);
-		cmk_shadow_draw(priv->shadow, cr);
-		cairo_translate(cr, 0, -1);
-
 		double radius;
 		static const double degrees = M_PI / 180.0;
 
@@ -280,6 +288,21 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 		cairo_arc(cr, radius, height - radius, radius, 90 * degrees, 180 * degrees);
 		cairo_arc(cr, radius, radius, radius, 180 * degrees, 270 * degrees);
 		cairo_close_path(cr);
+
+		if(priv->type == CMK_BUTTON_ACTION)
+		{
+			if(priv->prevWidth != width || priv->prevHeight != height)
+			{
+				priv->prevWidth = width;
+				priv->prevHeight = height;
+				// TODO: Use circle shadow eventually
+				cmk_shadow_set_shape(priv->shadow, cairo_copy_path(cr), false);
+			}
+			cairo_translate(cr, 0, 1);
+			cmk_shadow_draw(priv->shadow, cr);
+			cairo_translate(cr, 0, -1);
+		}
+
 		cairo_clip(cr);
 	}
 
