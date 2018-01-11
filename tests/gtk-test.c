@@ -52,8 +52,14 @@ int main(int argc, char **argv)
 
 	// Button
 	CmkButton *button = cmk_button_new_with_label(CMK_BUTTON_RAISED, "Install VeltOS");
+	gtk_widget_set_valign(CMK_GTK(button), GTK_ALIGN_CENTER);
 	gtk_box_pack_start(GTK_BOX(box), CMK_GTK(button), TRUE, TRUE, 0);
 	gtk_widget_show(CMK_GTK(button));
+
+	// Icon
+	CmkIcon *icon = cmk_icon_new_full("firefox", NULL, 128, false);
+	gtk_box_pack_start(GTK_BOX(box), CMK_GTK(icon), TRUE, TRUE, 0);
+	gtk_widget_show(CMK_GTK(icon));
 
 	//gtk_container_add(GTK_CONTAINER(vbox), box);
 	gtk_box_set_center_widget(GTK_BOX(vbox), box);

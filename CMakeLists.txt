@@ -22,7 +22,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 # Create library target
-set(CMK_DEPENDENCIES cairo>=1.15 pango>=1.40)
+set(CMK_DEPENDENCIES cairo>=1.15 pango>=1.40 librsvg-2.0)
 set(CMK_SOURCES
 	src/cmk-button.c
 	src/cmk-timeline.c
@@ -30,6 +30,8 @@ set(CMK_SOURCES
 	src/cmk-label.c
 	src/cmk-palette.c
 	src/cmk-shadow.c
+	src/cmk-icon.c
+	src/cmk-icon-loader.c
 )
 
 if(CMK_WITH_GTK)
