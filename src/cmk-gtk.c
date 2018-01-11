@@ -415,7 +415,8 @@ static void on_sensitivity_changed(CmkGtkWidget *self, UNUSED GParamSpec *spec, 
 static void update_pango_context(GtkWidget *self_)
 {
 	CmkWidget *widget = CMK_GTK_WIDGET(self_)->widget;
-	cmk_widget_set_pango_context(widget, gtk_widget_get_pango_context(self_));
+	if(widget)
+		cmk_widget_set_pango_context(widget, gtk_widget_get_pango_context(self_));
 }
 
 static void on_screen_changed(GtkWidget *self_, UNUSED GdkScreen *prevScreen)
