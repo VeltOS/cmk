@@ -160,11 +160,8 @@ void cmk_button_init(CmkButton *self)
 	PRIV(self)->shadow = cmk_shadow_new(SHADOW_RADIUS);
 
 	PRIV(self)->label = cmk_label_new_bold(NULL);
-	//PangoLayout *layout = cmk_label_get_layout(PRIV(self)->label);
-	//PangoFontDescription *desc = pango_font_description_copy_static(pango_layout_get_font_description(layout));
-	//pango_font_description_set_variant(desc, PANGO_VARIANT_SMALL_CAPS);
-	//pango_layout_set_font_description(layout, desc);
-	//pango_font_description_free(desc);
+	cmk_label_set_single_line(PRIV(self)->label, true);
+	cmk_label_set_alignment(PRIV(self)->label, PANGO_ALIGN_CENTER);
 
 	PRIV(self)->hover = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
 	PRIV(self)->up = cmk_timeline_new(CMK_WIDGET(self), ANIM_TIME);
@@ -328,19 +325,33 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 		float r4 = x*x + (height-y)*(height-y);
 		float r = sqrt(MAX(MAX(MAX(r1, r2), r3), r4));
 		
+		cairo_save(cr);
 		cairo_new_sub_path(cr);
 		cairo_arc(cr, x, y, r * downProgress, 0, 2 * M_PI);
 		cairo_close_path(cr);
 		cairo_clip(cr);
 		cmk_cairo_set_source_color(cr, priv->selectedColor);
 		cairo_paint_with_alpha(cr, (1 - upProgress));
+		cairo_restore(cr);
 	}
 
-	cairo_restore(cr);
-
 	// Paint text
-	cairo_translate(cr, WIDTH_PADDING, HEIGHT_PADDING);
+	float textWidth;
+	cmk_widget_get_preferred_width(CMK_WIDGET(priv->label), -1, NULL, &textWidth);
+	textWidth = MIN(textWidth, width);
+
+	float textHeight;
+	cmk_widget_get_preferred_height(CMK_WIDGET(priv->label), textWidth, NULL, &textHeight);
+
+	cmk_widget_set_size(CMK_WIDGET(priv->label), textWidth, textHeight);
+
+	cairo_translate(cr,
+		width / 2 - textWidth / 2,
+		height / 2 - textHeight / 2);
+
 	cmk_widget_draw(CMK_WIDGET(priv->label), cr);
+
+	cairo_restore(cr);
 }
 
 static bool on_event(CmkWidget *self_, const CmkEvent *event)
