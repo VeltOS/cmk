@@ -67,16 +67,16 @@ const char * cmk_icon_get_icon(CmkIcon *icon);
  * cmk_icon_set_pixmap:
  * @icon: The icon
  * @data: A pixel buffer in @format pixel format, with @size pixels per
- *        row. Must be exactly size*size*[@format bytes]*@frames bytes
- *        long.
+ *        row. Must be exactly @stride*@size*@frames bytes long.
  * @format: The pixel format of the data buffer
- * @size: Size in pixels of the icon.
+ * @size: Size (width and height) in pixels of the icon.
+ * @stride: Stride (length of a row, in bytes) of the data buffer.
  * @frames: Number of frames of images in the animation. (Current unsupported)
  * @fps: Frames per second of the animation (Currently unsupported)
  *
  * Instead of using a named icon, use a pixel buffer (or animation). For a
  * static image, set frames to 1. Otherwise, buf should contain a sequence
- * of pixmaps in order and frames should be the number of pixmaps. 
+ * of pixmaps in order and frames should be the number of pixmaps.
  * Note that the pixmap must be a square, of width and height 'size'. This
  * does not need to be the same size as set with cmk_icon_set_size or
  * the #CmkIcon constructors; if it is not, the pixmap will be scaled.
@@ -85,7 +85,7 @@ const char * cmk_icon_get_icon(CmkIcon *icon);
  *
  * TODO: Animation not yet supported. Only the first frame will be used.
  */
-void cmk_icon_set_pixmap(CmkIcon *icon, unsigned char *data, cairo_format_t format, unsigned int size, unsigned int frames, unsigned int fps);
+void cmk_icon_set_pixmap(CmkIcon *icon, unsigned char *data, cairo_format_t format, unsigned int size, unsigned int stride, unsigned int frames, unsigned int fps);
 
 /**
  * cmk_icon_set_size:

@@ -26,6 +26,7 @@ struct _CmkIconPrivate
 	// scale used at time of surface creation
 	unsigned int surfaceScale;
 	unsigned int surfaceSize; // not scaled
+	bool usingPixmap;
 
 	const CmkColor *foregroundColor;
 };
@@ -210,12 +211,20 @@ static void set_property(GObject *self_, guint id, const GValue *value, GParamSp
 static void clear_cache(CmkIcon *self)
 {
 	CmkIconPrivate *priv = PRIV(self);
-	g_clear_pointer(&priv->surface, cairo_surface_destroy);
+	if(!priv->usingPixmap)
+	{
+		g_clear_pointer(&priv->surface, cairo_surface_destroy);
+		priv->surfaceScale = 0;
+		priv->surfaceSize = 0;
+	}
 }
 
 static void ensure_surface(CmkIcon *self, cairo_t *cr)
 {
 	CmkIconPrivate *priv = PRIV(self);
+
+	if(priv->usingPixmap)
+		return;
 
 	// Use the device scale as the scale for the icon,
 	// as device scale is usually set based on system
@@ -261,6 +270,8 @@ static void ensure_surface(CmkIcon *self, cairo_t *cr)
 
 	if(path)
 	{
+		priv->surfaceSize = size;
+		priv->surfaceScale = iconScale;
 		priv->surface = cmk_icon_loader_load(priv->loader,
 			path, size, iconScale, true);
 		g_free(path);
@@ -270,6 +281,9 @@ static void ensure_surface(CmkIcon *self, cairo_t *cr)
 static void on_draw(CmkWidget *self_, cairo_t *cr)
 {
 	CmkIconPrivate *priv = PRIV(CMK_ICON(self_));
+
+	if(!priv->usingPixmap && !priv->iconName)
+		return;
 
 	// Make sure the icon (priv->surace) is loaded
 	ensure_surface(CMK_ICON(self_), cr);
@@ -345,6 +359,7 @@ void cmk_icon_set_icon(CmkIcon *self, const char *iconName)
 
 	g_free(priv->iconName);
 	priv->iconName = g_strdup(iconName);
+	priv->usingPixmap = false;
 	clear_cache(self);
 	cmk_widget_invalidate(CMK_WIDGET(self), NULL);
 }
@@ -355,9 +370,44 @@ const char * cmk_icon_get_icon(CmkIcon *self)
 	return PRIV(self)->iconName;
 }
 
-void cmk_icon_set_pixmap(CmkIcon *self, unsigned char *data, cairo_format_t format, unsigned int size, unsigned int frames, unsigned int fps)
+/*
+ * TODO: Animated pixmaps
+ */
+void cmk_icon_set_pixmap(CmkIcon *self, unsigned char *data, cairo_format_t format, unsigned int size, unsigned int stride, unsigned int frames, unsigned int fps)
 {
-	// TODO
+	g_return_if_fail(CMK_IS_ICON(self));
+	g_return_if_fail(stride >= size);
+
+	CmkIconPrivate *priv = PRIV(self);
+
+	g_clear_pointer(&priv->iconName, g_free);
+	priv->usingPixmap = false;
+	clear_cache(self);
+
+	priv->surface = cairo_image_surface_create(format, size, size);
+	unsigned char *tdata = cairo_image_surface_get_data(priv->surface);
+
+	unsigned int tstride = cairo_format_stride_for_width(format, size);
+	if(tstride == stride)
+	{
+		memcpy(tdata, data, size * tstride);
+	}
+	else
+	{
+		// Unequal strides, so copy row by row
+		unsigned char *srow = data, *trow = tdata;
+		unsigned int amount = MIN(stride, tstride);
+		for(unsigned int i = 0; i < size; ++i)
+		{
+			memcpy(trow, srow, amount);
+			srow += stride;
+			trow += tstride;
+		}
+	}
+
+	cairo_surface_mark_dirty(priv->surface);
+	priv->usingPixmap = true;
+	cmk_widget_invalidate(CMK_WIDGET(self), NULL);
 }
 
 void cmk_icon_set_size(CmkIcon *self, float size)
