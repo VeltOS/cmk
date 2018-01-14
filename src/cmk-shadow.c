@@ -99,7 +99,7 @@ static void cmk_shadow_class_init(CmkShadowClass *class)
 	g_object_class_install_properties(base, PROP_LAST, properties);
 }
 
-static void cmk_shadow_init(CmkShadow *self)
+static void cmk_shadow_init(UNUSED CmkShadow *self)
 {
 }
 

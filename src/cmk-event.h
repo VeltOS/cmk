@@ -17,7 +17,6 @@
  * @CMK_EVENT_CROSSING: Mouse enter/leave event.
  * @CMK_EVENT_MOTION: Mouse motion event.
  * @CMK_EVENT_KEY: Keyboard keypress event.
- * @CMK_EVENT_TEXT: Unicode text input event. Use this for inserting user-typed text.
  * @CMK_EVENT_FOCUS: Key focus / unfocus event. Usually caused by tabbing.
  * @CMK_EVENT_SCROLL: Scroll event.
  * @CMK_EVENT_MASK_ALL: A mask for all event types.
@@ -179,8 +178,7 @@ typedef struct
 /**
  * CmkEventKey:
  *
- * Keyboard event data. This event should not be used for text
- * input. Instead, see CMK_EVENT_TEXT and #CmkEventText.
+ * Keyboard event data.
  *
  * @type: #CmkEventType type of event.
  * @time: Time of event, in milliseconds.
@@ -196,20 +194,6 @@ typedef struct
 	unsigned int keyval;
 	bool press;
 } CmkEventKey;
-
-/**
- * Text input event data.
- *
- * @type: #CmkEventType type of event.
- * @time: Time of event, in milliseconds.
- * @string: A NULL-terminated UTF-8 string of text input by the user.
- */
-typedef struct
-{
-	CmkEventType type;
-	uint32_t time;
-	char *string;
-} CmkEventText;
 
 /**
  * Keyboard focus event data.

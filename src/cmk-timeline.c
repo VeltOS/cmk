@@ -7,7 +7,9 @@
 #include "cmk-timeline.h"
 #include <math.h>
 
-static CmkTimelineHandlerCallback gTimelineHandlerCallback;
+static CmkTimelineHandlerCallback gTimelineHandlerCallback = NULL;
+static CmkAddTimeoutHandler gAddTimeoutHandler = NULL;
+static CmkRemoveTimeoutHandler gRemoveTimeoutHandler = NULL;
 
 struct CmkTimeline_
 {
@@ -399,4 +401,30 @@ float cmk_timeline_ease(CmkTimelineEasingMode mode, float p)
 			return 0.5f * (1 - cmk_timeline_ease(CMK_TIMELINE_BOUNCE_OUT, 1 - (p * 2)));
 		return 0.5f * cmk_timeline_ease(CMK_TIMELINE_BOUNCE_OUT, (p * 2) - 1) + 0.5f;
 	}
+}
+
+
+void cmk_set_timeout_handlers(CmkAddTimeoutHandler add, CmkRemoveTimeoutHandler remove)
+{
+	gAddTimeoutHandler = add;
+	gRemoveTimeoutHandler = remove;
+}
+
+void cmk_get_timeout_handlers(CmkAddTimeoutHandler *add, CmkRemoveTimeoutHandler *remove)
+{
+	*add = gAddTimeoutHandler;
+	*remove = gRemoveTimeoutHandler;
+}
+
+unsigned int cmk_add_timeout(unsigned int ms, CmkTimeoutCallback callback, void *userdata)
+{
+	if(gAddTimeoutHandler)
+		return gAddTimeoutHandler(ms, callback, userdata);
+	return 0;
+}
+
+void cmk_remove_timeout(unsigned int id)
+{
+	if(gRemoveTimeoutHandler)
+		gRemoveTimeoutHandler(id);
 }

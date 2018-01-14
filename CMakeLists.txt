@@ -53,6 +53,35 @@ target_include_directories(cmk PRIVATE ${DEPS_INCLUDE_DIRS})
 
 add_subdirectory(tests)
 
+# Download keysyms list
+message("Downloading keysymdef.h")
+file(DOWNLOAD
+	"https://cgit.freedesktop.org/xorg/proto/x11proto/plain/keysymdef.h"
+	"${CMAKE_BINARY_DIR}/keysymdef.h"
+	EXPECTED_HASH SHA256=92fb5a36eccea3267e74702d22c2c5f7928844ca763d074bdd04ee9181ad74e4
+	SHOW_PROGRESS)
+
+message("Downloading XF86keysym.h")
+file(DOWNLOAD
+	"https://cgit.freedesktop.org/xorg/proto/x11proto/plain/XF86keysym.h"
+	"${CMAKE_BINARY_DIR}/XF86keysym.h"
+	EXPECTED_HASH SHA256=1ca5d12ce28f251c21d288cc4e6cc8892fa05da7d5e0734142a6e4221b65a2f1
+	SHOW_PROGRESS)
+
+message("Generating cmk-keysyms.h from x11proto keysym definitions")
+execute_process(
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+	OUTPUT_FILE cmk-keysyms.h
+	COMMAND awk "BEGIN { print \"\
+/*\\n\
+ * Keysyms generated from the x11 standard definitions found at\\n\
+ * https://cgit.freedesktop.org/xorg/proto/x11proto/plain/keysymdef.h\\n\
+ * https://cgit.freedesktop.org/xorg/proto/x11proto/plain/XF86keysym.h\\n\
+ * These match what are used by GTK+ and Clutter.\\n\
+ */\\n\
+\"\
+} /^#define/{ gsub(\"XK_\", \"CMK_KEY_\", $0); print }" keysymdef.h XF86keysym.h)
+
 # Generate pkg-config file
 configure_file(libcmk.pc.in libcmk.pc @ONLY)
 
@@ -76,4 +105,5 @@ endif(GTKDOC_FOUND)
 # Install files
 install(TARGETS cmk DESTINATION lib)
 install(DIRECTORY src/ DESTINATION include/libcmk/cmk FILES_MATCHING PATTERN "*.h")
+install(FILES ${PROJECT_BINARY_DIR}/cmk-keysyms.h DESTINATION include/libcmk/cmk)
 install(FILES ${PROJECT_BINARY_DIR}/libcmk.pc DESTINATION lib/pkgconfig)

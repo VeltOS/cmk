@@ -111,6 +111,9 @@ static void cmk_clutter_widget_init(CmkClutterWidget *self)
 
 	self->ctx = clutter_backend_get_cogl_context(clutter_get_default_backend());
 	self->npot = cogl_has_feature(self->ctx, COGL_FEATURE_ID_TEXTURE_NPOT_BASIC);
+
+	cmk_timeline_set_handler_callback(cmk_clutter_timeline_callback, false);
+	cmk_set_timeout_handlers((CmkAddTimeoutHandler)g_timeout_add, (CmkRemoveTimeoutHandler)g_source_remove);
 }
 
 static void on_constructed(GObject *self_)
@@ -161,8 +164,6 @@ static void on_constructed(GObject *self_)
 	                 "settings-changed",
 	                 G_CALLBACK(update_pango_context),
 	                 self);
-
-	cmk_timeline_set_handler_callback(cmk_clutter_timeline_callback, false);
 
 	G_OBJECT_CLASS(cmk_clutter_widget_parent_class)->constructed(self_);
 }
@@ -251,7 +252,6 @@ static gboolean on_event(ClutterActor *self_, ClutterEvent *event)
 		CmkEventMotion motion;
 		CmkEventScroll scroll;
 		CmkEventKey key;
-		CmkEventText text;
 		CmkEventFocus focus;
 	} new = {0};
 
@@ -324,7 +324,6 @@ static gboolean on_event(ClutterActor *self_, ClutterEvent *event)
 		new.key.keyval = ((ClutterKeyEvent *)event)->keyval;
 		break;
 
-	// TODO: CmkEventText
 	// TODO: Keyboard focus change (no Clutter event for this).
 
 	default:

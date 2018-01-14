@@ -9,11 +9,9 @@ static const CmkNamedColor Colors[] = {
 	{NULL}
 };
 
-void cmk_gtk_init(void);
 int main(int argc, char **argv)
 {
 	gtk_init(&argc, &argv);
-	cmk_gtk_init();
 
 	// Create window
 	GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -57,7 +55,7 @@ int main(int argc, char **argv)
 	gtk_widget_show(CMK_GTK(button));
 
 	// Icon
-	CmkIcon *icon = cmk_icon_new_full("firefox", NULL, 128, false);
+	CmkIcon *icon = cmk_icon_new_full("velt", NULL, 128, false);
 	gtk_box_pack_start(GTK_BOX(box), CMK_GTK(icon), TRUE, TRUE, 0);
 	gtk_widget_show(CMK_GTK(icon));
 

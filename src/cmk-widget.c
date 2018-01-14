@@ -48,6 +48,7 @@ enum
 {
 	SIGNAL_INVALIDATE = 1,
 	SIGNAL_RELAYOUT,
+	SIGNAL_FOCUS,
 	SIGNAL_LAST
 };
 
@@ -174,6 +175,20 @@ static void cmk_widget_class_init(CmkWidgetClass *class)
 	 */
 	signals[SIGNAL_RELAYOUT] =
 		g_signal_new("relayout",
+		             G_TYPE_FROM_CLASS(class),
+		             G_SIGNAL_RUN_FIRST,
+		             0, NULL, NULL, NULL,
+		             G_TYPE_NONE,
+		             0);
+
+	/**
+	 * CmkWidget::focus:
+	 * @widget: The widget to focus.
+	 *
+	 * The widget requests it receives keyboard focus.
+	 */
+	signals[SIGNAL_FOCUS] =
+		g_signal_new("focus",
 		             G_TYPE_FROM_CLASS(class),
 		             G_SIGNAL_RUN_FIRST,
 		             0, NULL, NULL, NULL,
@@ -348,6 +363,11 @@ bool cmk_widget_event(CmkWidget *self, const CmkEvent *event)
 	if(CMK_WIDGET_GET_CLASS(self)->event)
 		CMK_WIDGET_GET_CLASS(self)->event(self, event);
 	return false;
+}
+
+void cmk_widget_focus(CmkWidget *self)
+{
+	g_signal_emit(self, signals[SIGNAL_FOCUS], 0);
 }
 
 unsigned int cmk_widget_get_event_mask(CmkWidget *self)

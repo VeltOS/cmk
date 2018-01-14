@@ -105,6 +105,16 @@ typedef void (*CmkTimelineActionCallback)(CmkWidget *widget, void *data, CmkTime
  */
 typedef void * (*CmkTimelineHandlerCallback)(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
+/**
+ * CmkTimeoutCallback:
+ *
+ * Callback for cmk_timeout_add().
+ */
+typedef bool (*CmkTimeoutCallback)(void *userdata);
+
+typedef unsigned int (*CmkAddTimeoutHandler)(unsigned int ms, CmkTimeoutCallback callback, void *userdata);
+typedef void (*CmkRemoveTimeoutHandler)(unsigned int id);
+
 
 /**
  * cmk_timeline_new:
@@ -295,3 +305,16 @@ CmkTimelineHandlerCallback cmk_timeline_get_handler_callback(void);
  * useful for getting multiple easing modes out of a one timeline.
  */
 float cmk_timeline_ease(CmkTimelineEasingMode mode, float progress);
+
+void cmk_set_timeout_handlers(CmkAddTimeoutHandler add, CmkRemoveTimeoutHandler remove);
+
+void cmk_get_timeout_handlers(CmkAddTimeoutHandler *add, CmkRemoveTimeoutHandler *remove);
+
+/**
+ * cmk_add_timeout
+ *
+ * Invokes wrapper's timeout method.
+ */
+unsigned int cmk_add_timeout(unsigned int ms, CmkTimeoutCallback callback, void *userdata);
+
+void cmk_remove_timeout(unsigned int id);

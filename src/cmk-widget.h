@@ -133,6 +133,13 @@ void cmk_widget_draw(CmkWidget *widget, cairo_t *cr);
 bool cmk_widget_event(CmkWidget *widget, const CmkEvent *event);
 
 /**
+ * cmk_widget_focus:
+ *
+ * Request keyboard focus of the widget.
+ */
+void cmk_widget_focus(CmkWidget *widget);
+
+/**
  * cmk_widget_set_event_mask:
  *
  * Sets a widget's event mask in the form of a bitfield of

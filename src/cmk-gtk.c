@@ -44,15 +44,11 @@ static void get_preferred_width(GtkWidget *self_, gint *min, gint *nat);
 static void get_preferred_height_for_width(GtkWidget *self_, gint width, gint *min, gint *nat);
 static void get_preferred_height(GtkWidget *self_, gint *min, gint *nat);
 static void on_widget_request_invalidate(CmkWidget *widget, const cairo_region_t *region, CmkGtkWidget *self);
-static void on_widget_request_relayout(CmkWidget *widget, void *signaldata, CmkGtkWidget *self);
+static void on_widget_request_relayout(CmkWidget *widget, CmkGtkWidget *self);
+static void on_widget_request_focus(CmkWidget *widget, CmkGtkWidget *self);
 static void on_widget_event_mask_changed(CmkWidget *widget, GParamSpec *spec, CmkGtkWidget *self);
 static void * cmk_gtk_timeline_callback(CmkTimeline *timeline, bool start, uint64_t *time, void *userdata);
 
-
-void cmk_gtk_init(void)
-{
-	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
-}
 
 GtkWidget * cmk_widget_to_gtk(CmkWidget *widget)
 {
@@ -110,9 +106,9 @@ static void cmk_gtk_widget_class_init(CmkGtkWidgetClass *class)
 static void cmk_gtk_widget_init(CmkGtkWidget *self)
 {
 	gtk_widget_set_has_window(GTK_WIDGET(self), FALSE);
-	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
-	gtk_widget_set_can_default(GTK_WIDGET(self), TRUE);
-	gtk_widget_set_receives_default(GTK_WIDGET(self), TRUE);
+
+	cmk_timeline_set_handler_callback(cmk_gtk_timeline_callback, false);
+	cmk_set_timeout_handlers((CmkAddTimeoutHandler)g_timeout_add, (CmkRemoveTimeoutHandler)g_source_remove);
 }
 
 static void on_constructed(GObject *self_)
@@ -145,6 +141,10 @@ static void on_constructed(GObject *self_)
 	g_signal_connect(self->widget,
 	                 "relayout",
 	                 G_CALLBACK(on_widget_request_relayout),
+	                 self);
+	g_signal_connect(self->widget,
+	                 "focus",
+	                 G_CALLBACK(on_widget_request_focus),
 	                 self);
 	g_signal_connect(self->widget,
 	                 "notify::event-mask",
@@ -335,7 +335,6 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 		CmkEventMotion motion;
 		CmkEventScroll scroll;
 		CmkEventKey key;
-		CmkEventText text;
 		CmkEventFocus focus;
 	} new = {0};
 
@@ -398,9 +397,7 @@ static gboolean on_event(GtkWidget *self_, GdkEvent *event)
 		new.focus.type = CMK_EVENT_FOCUS;
 		new.focus.in = (gboolean)((GdkEventFocus *)event)->in;
 		break;
-	// TODO: CmkEventText
 	default:
-		// TODO: Unsupported event type.
 		return GDK_EVENT_PROPAGATE;
 	}
 
@@ -485,9 +482,14 @@ static void on_widget_request_invalidate(UNUSED CmkWidget *widget, const cairo_r
 		gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
-static void on_widget_request_relayout(UNUSED CmkWidget *widget, UNUSED void *signaldata, CmkGtkWidget *self)
+static void on_widget_request_relayout(UNUSED CmkWidget *widget, CmkGtkWidget *self)
 {
 	gtk_widget_queue_resize(GTK_WIDGET(self));
+}
+
+static void on_widget_request_focus(UNUSED CmkWidget *widget, CmkGtkWidget *self)
+{
+	gtk_widget_grab_focus(self);
 }
 
 static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED GParamSpec *spec, CmkGtkWidget *self)
@@ -515,6 +517,11 @@ static void on_widget_event_mask_changed(CmkWidget *widget, UNUSED GParamSpec *s
 	events |= gtk_widget_get_events(GTK_WIDGET(self));
 
 	gdk_window_set_events(self->eventWindow, events);
+
+	bool focus = (widgetMask & CMK_EVENT_FOCUS);
+	gtk_widget_set_can_focus(GTK_WIDGET(self), focus);
+	gtk_widget_set_can_default(GTK_WIDGET(self), focus);
+	gtk_widget_set_receives_default(GTK_WIDGET(self), focus);
 }
 
 CmkWidget * cmk_gtk_widget_get_widget(CmkGtkWidget *self)
