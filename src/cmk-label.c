@@ -9,7 +9,8 @@
 #include <pango/pangocairo.h>
 #include "cmk-label.h"
 
-#define CMK_LABEL_EVENT_MASK 0
+#define CMK_LABEL_DEFAULT_EVENT_MASK 0
+#define CMK_LABEL_EDITABLE_EVENT_MASK CMK_EVENT_BUTTON | CMK_EVENT_KEY | CMK_EVENT_TEXT | CMK_EVENT_FOCUS
 
 // Only set when a CmkLabel exists
 static PangoContext *gDefaultContext = NULL;
@@ -28,6 +29,11 @@ struct _CmkLabelPrivate
 	PangoLayout *layout;
 	bool singleline;
 
+	bool editable;
+	bool focus;
+	bool cursorFlickerOn;
+	int selectionBegin, selectionEnd;
+
 	const CmkColor *foregroundColor;
 };
 
@@ -40,6 +46,7 @@ enum
 	PROP_BOLD,
 	//PROP_FONT_SIZE,
 	//PROP_FONT_FAMILY,
+	PROP_EDITABLE,
 	PROP_LAST,
 	PROP_OVERRIDE_EVENT_MASK
 };
@@ -53,6 +60,8 @@ static void on_dispose(GObject *self_);
 static void set_property(GObject *self_, guint id, const GValue *value, GParamSpec *pspec);
 static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *pspec);
 static void on_draw(CmkWidget *self_, cairo_t *cr);
+static void draw_selection(CmkLabel *self, cairo_t *cr);
+static bool on_event(CmkWidget *self_, const CmkEvent *event);
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat);
 static void get_preferred_height(CmkWidget *self_, float forWidth, float *min, float *nat);
 static void get_draw_rect(CmkWidget *self_, CmkRect *rect);
@@ -86,12 +95,13 @@ static void cmk_label_class_init(CmkLabelClass *class)
 
 	CmkWidgetClass *widgetClass = CMK_WIDGET_CLASS(class);
 	widgetClass->draw = on_draw;
+	widgetClass->event = on_event;
 	widgetClass->get_preferred_width = get_preferred_width;
 	widgetClass->get_preferred_height = get_preferred_height;
 	widgetClass->get_draw_rect = get_draw_rect;
 
 	/**
-	 * CmkWidget:text:
+	 * CmkLabel:text:
 	 *
 	 * The text being displayed.
 	 */
@@ -101,7 +111,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 		                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
 	/**
-	 * CmkWidget:single-line:
+	 * CmkLabel:single-line:
 	 *
 	 * To force only a single line of text.
 	 */
@@ -111,7 +121,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
 	/**
-	 * CmkWidget:bold:
+	 * CmkLabel:bold:
 	 *
 	 * Bold text or not. More specific variation of font weight
 	 * can be made using the PangoLayout object from
@@ -119,6 +129,16 @@ static void cmk_label_class_init(CmkLabelClass *class)
 	 */
 	properties[PROP_BOLD] =
 		g_param_spec_boolean("bold", "bold", "bold",
+		                     false,
+		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	/**
+	 * CmkLabel:editable:
+	 *
+	 * User-editable text
+	 */
+	properties[PROP_EDITABLE] =
+		g_param_spec_boolean("editable", "editable", "editable",
 		                     false,
 		                     G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
@@ -130,6 +150,7 @@ static void cmk_label_class_init(CmkLabelClass *class)
 static void cmk_label_init(CmkLabel *self)
 {
 	CmkLabelPrivate *priv = PRIV(self);
+	priv->cursorFlickerOn = true;
 
 	// Make sure the default context exists
 	if(PANGO_IS_CONTEXT(gDefaultContext))
@@ -184,8 +205,12 @@ static void get_property(GObject *self_, guint id, GValue *value, GParamSpec *ps
 	case PROP_BOLD:
 		g_value_set_boolean(value, cmk_label_get_bold(self));
 		break;
+	case PROP_EDITABLE:
+		g_value_set_boolean(value, cmk_label_get_editable(self));
+		break;
 	case PROP_OVERRIDE_EVENT_MASK:
-		g_value_set_uint(value, CMK_LABEL_EVENT_MASK);
+		g_value_set_uint(value,
+			PRIV(self)->editable ? CMK_LABEL_EDITABLE_EVENT_MASK : CMK_LABEL_DEFAULT_EVENT_MASK);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
@@ -207,6 +232,9 @@ static void set_property(GObject *self_, guint id, const GValue *value, GParamSp
 		break;
 	case PROP_BOLD:
 		cmk_label_set_bold(self, g_value_get_boolean(value));
+		break;
+	case PROP_EDITABLE:
+		cmk_label_set_editable(self, g_value_get_boolean(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(self, id, pspec);
@@ -232,6 +260,61 @@ static void on_draw(CmkWidget *self_, cairo_t *cr)
 
 	cmk_cairo_set_source_color(cr, priv->foregroundColor);
 	pango_cairo_show_layout(cr, layout);
+
+	if(priv->editable && priv->focus)
+		draw_selection(CMK_LABEL(self_), cr);
+}
+
+static void draw_selection(CmkLabel *self, cairo_t *cr)
+{
+	CmkLabelPrivate *priv = PRIV(self);
+
+	if(priv->selectionBegin == priv->selectionEnd)
+	{
+		PangoRectangle rect;
+		pango_layout_get_cursor_pos(priv->layout, priv->selectionBegin, &rect, NULL);
+
+		g_message("%i, %i, %i, %i", rect.x, rect.y, rect.width, rect.height);
+		cairo_set_source_rgba(cr, 0, 0, 1, 0.5);
+		cairo_rectangle(cr,
+			(float)rect.x / PANGO_SCALE,
+			(float)rect.y / PANGO_SCALE,
+			1,
+			(float)rect.height / PANGO_SCALE);
+		cairo_fill(cr);
+	}
+}
+
+static bool on_event(CmkWidget *self_, const CmkEvent *event)
+{
+	CmkLabelPrivate *priv = PRIV(CMK_LABEL(self_));
+
+	if(event->type == CMK_EVENT_BUTTON)
+	{
+		CmkEventButton *button = (CmkEventButton *)event;
+		if(button->press)
+		{
+			int index, trailing;
+			pango_layout_xy_to_index(priv->layout,
+				button->x * PANGO_SCALE,
+				button->y * PANGO_SCALE,
+				&index, &trailing);
+			index += trailing;
+			priv->selectionBegin = index;
+			priv->selectionEnd = index;
+
+			if(priv->editable)
+				cmk_widget_focus(self_);
+
+			cmk_widget_invalidate(self_, NULL);
+		}
+	}
+	else if(event->type == CMK_EVENT_FOCUS)
+	{
+		CmkEventFocus *focus = (CmkEventFocus *)event;
+		priv->focus = focus->in;
+	}
+	return false;
 }
 
 static void get_preferred_width(CmkWidget *self_, float forHeight, float *min, float *nat)
@@ -307,19 +390,12 @@ static void get_draw_rect(CmkWidget *self_, CmkRect *rect)
 {
 	PangoLayout *layout = PRIV(CMK_LABEL(self_))->layout;
 
+	// The ink rect could be used, but (a) it would change
+	// more frequently, and (b) it does not include the full
+	// height of the cursor.
 	float width, height;
-	cmk_widget_get_size(self_, &width, &height);
-
-	pango_layout_set_width(layout, width * PANGO_SCALE);
-	pango_layout_set_height(layout, height * PANGO_SCALE);
-
-	PangoRectangle inkRect = {0};
-	pango_layout_get_extents(layout, &inkRect, NULL);
-
-	rect->x = (float)inkRect.x / PANGO_SCALE;
-	rect->y = (float)inkRect.y / PANGO_SCALE;
-	rect->width = (float)inkRect.width / PANGO_SCALE;
-	rect->height = (float)inkRect.height / PANGO_SCALE;
+	cmk_widget_get_size(self_, &rect->width, &rect->height);
+	rect->x = rect->y = 0;
 }
 
 static void on_palette_changed(CmkLabel *self)
@@ -498,6 +574,25 @@ bool cmk_label_get_bold(CmkLabel *self)
 		return 0;
 
 	return pango_font_description_get_weight(desc) >= PANGO_WEIGHT_BOLD;
+}
+
+void cmk_label_set_editable(CmkLabel *self, bool editable)
+{
+	g_return_if_fail(CMK_IS_LABEL(self));
+	CmkLabelPrivate *priv = PRIV(self);
+
+	if(priv->editable == editable)
+		return;
+
+	priv->editable = editable;
+	//cmk_widget_invalidate(CMK_WIDGET(
+	g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_EDITABLE]);
+}
+
+bool cmk_label_get_editable(CmkLabel *self)
+{
+	g_return_val_if_fail(CMK_IS_LABEL(self), false);
+	return PRIV(self)->editable;
 }
 
 PangoLayout * cmk_label_get_layout(CmkLabel *self)

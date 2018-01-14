@@ -140,6 +140,21 @@ void cmk_label_set_alignment(CmkLabel *label, PangoAlignment alignment);
 void cmk_label_set_bold(CmkLabel *label, bool bold);
 
 /**
+ * cmk_label_set_editable:
+ *
+ * Makes the text editable. This currently has limited
+ * support and must be single line.
+ */
+void cmk_label_set_editable(CmkLabel *self, bool editable);
+
+/**
+ * cmk_label_get_editable:
+ *
+ * Gets if the label is editable.
+ */
+bool cmk_label_get_editable(CmkLabel *self);
+
+/**
  * cmk_label_get_bold:
  *
  * Returns true if the font weight is >= PANGO_WEIGHT_BOLD.
